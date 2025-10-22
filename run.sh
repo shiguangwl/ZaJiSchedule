@@ -22,14 +22,14 @@ PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
 echo "Python版本: $PYTHON_VERSION"
 
 # 检查虚拟环境
-if [ ! -d "../.venv" ]; then
+if [ ! -d ".venv" ]; then
     echo -e "${YELLOW}虚拟环境不存在,正在创建...${NC}"
-    python3 -m venv ../.venv
+    python3 -m venv .venv
 fi
 
 # 激活虚拟环境
 echo -e "\n${YELLOW}激活虚拟环境...${NC}"
-source ../.venv/bin/activate
+source .venv/bin/activate
 
 # 安装依赖
 echo -e "\n${YELLOW}检查依赖包...${NC}"
@@ -43,11 +43,11 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # 创建必要的目录
-mkdir -p ../data ../logs
+mkdir -p static/js static/css templates
 
 # 启动应用
 echo -e "\n${GREEN}启动CPU智能调度系统...${NC}"
-echo -e "${GREEN}访问地址: http://localhost:8080${NC}\n"
+echo -e "${GREEN}访问地址: http://localhost:8000${NC}"
+echo -e "${GREEN}默认账号: admin / admin123${NC}\n"
 
-python3 -m cpu_scheduler.main
-
+python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload

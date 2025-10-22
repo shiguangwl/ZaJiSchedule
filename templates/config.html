@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}配置管理 - CPU 智能调度系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="fas fa-cog"></i> 配置管理</h2>
+        <hr>
+    </div>
+</div>
+
+<!-- 系统配置 -->
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <i class="fas fa-sliders-h"></i> 系统配置参数
+            </div>
+            <div class="card-body">
+                <form id="systemConfigForm">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">最低负载占比 (%)</label>
+                            <input type="number" class="form-control" id="minLoadPercent" min="0" max="100" step="0.1" required>
+                            <small class="text-muted">任何时间段保证的最低 CPU 分配比例</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">最高负载占比 (%)</label>
+                            <input type="number" class="form-control" id="maxLoadPercent" min="0" max="100" step="0.1" required>
+                            <small class="text-muted">任何时刻的 CPU 负载上限</small>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">滚动窗口大小 (小时)</label>
+                            <input type="number" class="form-control" id="rollingWindowHours" min="1" max="168" required>
+                            <small class="text-muted">滚动统计窗口的时长</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">平均负载限制 (%)</label>
+                            <input type="number" class="form-control" id="avgLoadLimitPercent" min="0" max="100" step="0.1" required>
+                            <small class="text-muted">滚动窗口内允许的平均 CPU 使用率上限</small>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">历史数据保留时长 (天)</label>
+                            <input type="number" class="form-control" id="historyRetentionDays" min="1" max="365" required>
+                            <small class="text-muted">性能指标历史数据的保留天数</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">指标采集间隔 (秒)</label>
+                            <input type="number" class="form-control" id="metricsIntervalSeconds" min="5" max="300" required>
+                            <small class="text-muted">性能指标采集的时间间隔</small>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-success d-none" id="configSuccessAlert">配置更新成功!</div>
+                    <div class="alert alert-danger d-none" id="configErrorAlert"></div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> 保存配置
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 时间段负载配置 -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <i class="fas fa-clock"></i> 时间段负载配置
+                <button class="btn btn-sm btn-light float-end" data-bs-toggle="modal" data-bs-target="#addTimeSlotModal">
+                    <i class="fas fa-plus"></i> 添加时间段
+                </button>
+            </div>
+            <div class="card-body">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>开始时间</th>
+                            <th>结束时间</th>
+                            <th>最大负载 (%)</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="timeSlotsTable">
+                        <tr>
+                            <td colspan="5" class="text-center text-muted">加载中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加时间段模态框 -->
+<div class="modal fade" id="addTimeSlotModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加时间段配置</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addTimeSlotForm">
+                    <div class="mb-3">
+                        <label class="form-label">开始时间</label>
+                        <input type="time" class="form-control" id="newStartTime" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">结束时间</label>
+                        <input type="time" class="form-control" id="newEndTime" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">最大负载 (%)</label>
+                        <input type="number" class="form-control" id="newMaxLoad" min="0" max="100" step="0.1" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="addTimeSlot()">添加</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/config.js"></script>
+{% endblock %}
+

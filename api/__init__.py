@@ -1,5 +1,4 @@
-"""API模块."""
+"""
+API 路由模块
+"""
 
-from api import models, routes, websocket
-
-__all__ = ["models", "routes", "websocket"]

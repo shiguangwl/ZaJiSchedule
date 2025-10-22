@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}历史数据 - CPU 智能调度系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="fas fa-history"></i> 历史数据查询</h2>
+        <hr>
+    </div>
+</div>
+
+<!-- 查询条件 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <i class="fas fa-filter"></i> 查询条件
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <label class="form-label">时间范围</label>
+                        <select class="form-select" id="timeRange" onchange="updateTimeRange()">
+                            <option value="24">最近 24 小时</option>
+                            <option value="168">最近 7 天</option>
+                            <option value="720">最近 30 天</option>
+                            <option value="custom">自定义</option>
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-3 d-none" id="customStartDiv">
+                        <label class="form-label">开始时间</label>
+                        <input type="datetime-local" class="form-control" id="customStart">
+                    </div>
+                    
+                    <div class="col-md-3 d-none" id="customEndDiv">
+                        <label class="form-label">结束时间</label>
+                        <input type="datetime-local" class="form-control" id="customEnd">
+                    </div>
+                    
+                    <div class="col-md-3">
+                        <label class="form-label">&nbsp;</label>
+                        <button class="btn btn-primary w-100" onclick="loadHistoryData()">
+                            <i class="fas fa-search"></i> 查询
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 图表展示 -->
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-chart-line"></i> CPU 使用率历史
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="historyCpuChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-chart-line"></i> 内存使用率历史
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="historyMemoryChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-chart-line"></i> 磁盘 I/O 历史
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="historyDiskChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-chart-line"></i> 网络 I/O 历史
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="historyNetworkChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 统计信息 -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <i class="fas fa-chart-bar"></i> 统计信息
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <h5>平均 CPU</h5>
+                        <h3 id="avgCpuStat">--</h3>
+                    </div>
+                    <div class="col-md-3">
+                        <h5>最大 CPU</h5>
+                        <h3 id="maxCpuStat">--</h3>
+                    </div>
+                    <div class="col-md-3">
+                        <h5>平均内存</h5>
+                        <h3 id="avgMemoryStat">--</h3>
+                    </div>
+                    <div class="col-md-3">
+                        <h5>数据点数</h5>
+                        <h3 id="dataPointsStat">--</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/history.js"></script>
+{% endblock %}
+

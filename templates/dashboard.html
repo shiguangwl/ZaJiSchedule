@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block title %}仪表盘 - CPU 智能调度系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="fas fa-tachometer-alt"></i> 系统监控仪表盘</h2>
+        <hr>
+    </div>
+</div>
+
+<!-- 实时指标卡片 -->
+<div class="row">
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="metric-label">CPU 使用率</div>
+            <div class="metric-value" id="cpuPercent">--</div>
+            <small class="text-muted">当前值</small>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="metric-label">内存使用率</div>
+            <div class="metric-value" id="memoryPercent">--</div>
+            <small class="text-muted">当前值</small>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="metric-label">滚动窗口平均 CPU</div>
+            <div class="metric-value" id="avgCpu">--</div>
+            <small class="text-muted">过去 <span id="windowHours">24</span> 小时</small>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="metric-label">风险等级</div>
+            <div class="metric-value" id="riskLevel">--</div>
+            <small class="text-muted">系统状态</small>
+        </div>
+    </div>
+</div>
+
+<!-- 调度器状态 -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <i class="fas fa-info-circle"></i> 调度器状态
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <td>安全 CPU 限制</td>
+                        <td class="text-end"><strong id="safeCpuLimit">--</strong>%</td>
+                    </tr>
+                    <tr>
+                        <td>平均负载限制</td>
+                        <td class="text-end"><strong id="avgLoadLimit">--</strong>%</td>
+                    </tr>
+                    <tr>
+                        <td>距离限制余量</td>
+                        <td class="text-end"><strong id="marginPercent">--</strong>%</td>
+                    </tr>
+                    <tr>
+                        <td>剩余 CPU 配额</td>
+                        <td class="text-end"><strong id="remainingQuota">--</strong></td>
+                    </tr>
+                    <tr>
+                        <td>数据点数量</td>
+                        <td class="text-end"><strong id="dataPoints">--</strong></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <i class="fas fa-chart-line"></i> 磁盘与网络 I/O
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <td>磁盘读取</td>
+                        <td class="text-end"><strong id="diskRead">--</strong> MB/s</td>
+                    </tr>
+                    <tr>
+                        <td>磁盘写入</td>
+                        <td class="text-end"><strong id="diskWrite">--</strong> MB/s</td>
+                    </tr>
+                    <tr>
+                        <td>网络上传</td>
+                        <td class="text-end"><strong id="netSent">--</strong> MB/s</td>
+                    </tr>
+                    <tr>
+                        <td>网络下载</td>
+                        <td class="text-end"><strong id="netRecv">--</strong> MB/s</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 图表 -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-chart-area"></i> CPU 使用率趋势
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="cpuChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-chart-area"></i> 内存使用率趋势
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="memoryChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/dashboard.js"></script>
+{% endblock %}
+
