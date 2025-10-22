@@ -1,11 +1,14 @@
 """
 CPU 智能调度引擎
 """
-from typing import Dict, Any, Tuple
-from datetime import datetime, timedelta
-from database import Database
-from config import ConfigManager
+
 import logging
+import time
+from datetime import datetime, timedelta
+from typing import Any
+
+from config import ConfigManager
+from database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +19,10 @@ class CPUScheduler:
     def __init__(self, db: Database, config: ConfigManager):
         self.db = db
         self.config = config
+        self._safe_limit_cache: float | None = None
+        self._cache_timestamp: float | None = None
 
-    def calculate_rolling_window_avg(self) -> Tuple[float, int]:
+    def calculate_rolling_window_avg(self) -> tuple[float, int]:
         """
         计算滚动窗口内的平均 CPU 使用率
 
@@ -35,85 +40,123 @@ class CPUScheduler:
 
         return round(avg_cpu, 2), len(metrics)
 
-    def calculate_remaining_quota(self) -> Dict[str, float]:
+    def calculate_remaining_quota(self) -> dict[str, float]:
         """
-        计算剩余的 CPU 配额
+        计算剩余的 CPU 配额（基于滑动窗口）
 
         Returns:
             包含剩余配额信息的字典
+            - total_quota: 总配额 (单位: 百分比·分钟)
+            - used_quota: 已用配额 (单位: 百分比·分钟)
+            - remaining_quota: 剩余配额 (单位: 百分比·分钟)
+            - avg_cpu_percent: 平均 CPU 使用率
+            - target_cpu_percent: 剩余时间内的目标 CPU 使用率
+            - actual_minutes: 实际运行时长 (分钟)
+            - window_minutes: 窗口时长 (分钟)
         """
         window_hours = self.config.rolling_window_hours
         avg_limit = self.config.avg_load_limit_percent
 
-        # 获取窗口内的数据
+        # 转换为分钟
+        window_minutes = window_hours * 60
+
+        # 获取窗口内的数据（滑动窗口：now - window_hours 到 now）
         metrics = self.db.get_metrics_in_window(window_hours)
 
         if not metrics:
             return {
-                "total_quota": avg_limit * window_hours * 3600,  # 总配额(百分比*秒)
+                "total_quota": avg_limit * window_minutes,  # 总配额(百分比·分钟)
                 "used_quota": 0.0,
-                "remaining_quota": avg_limit * window_hours * 3600,
-                "remaining_hours": window_hours,
-                "avg_cpu_percent": 0.0
+                "remaining_quota": avg_limit * window_minutes,
+                "avg_cpu_percent": 0.0,
+                "target_cpu_percent": avg_limit,
+                "actual_minutes": 0.0,
+                "window_minutes": window_minutes,
             }
 
-        # 计算已使用的配额
-        # 假设每个数据点代表采集间隔的平均值
-        interval_seconds = self.config.metrics_interval_seconds
-        used_quota = sum(m["cpu_percent"] * interval_seconds for m in metrics)
+        # 计算实际运行时长（从第一个数据点到现在）
+        from datetime import datetime
 
-        # 总配额 = 平均限制 * 窗口时长(秒)
-        total_quota = avg_limit * window_hours * 3600
+        first_timestamp = datetime.fromisoformat(metrics[0]["timestamp"])
+        now = datetime.now()
+        actual_seconds = (now - first_timestamp).total_seconds()
+        actual_minutes = actual_seconds / 60
 
-        # 剩余配额
+        # 计算平均 CPU 使用率（实际运行期间的平均）
+        avg_cpu = sum(m["cpu_percent"] for m in metrics) / len(metrics)
+
+        # 总配额 = 平均限制 × 窗口时长 (单位: 百分比·分钟)
+        total_quota = avg_limit * window_minutes
+
+        # 已用配额 = 平均CPU × 实际运行时长 (单位: 百分比·分钟)
+        # 关键修复：使用实际运行时长，而不是窗口时长
+        used_quota = avg_cpu * actual_minutes
+
+        # 剩余配额 = 总配额 - 已用配额
         remaining_quota = total_quota - used_quota
 
-        # 计算窗口剩余时间
-        if metrics:
-            first_timestamp = datetime.fromisoformat(metrics[0]["timestamp"])
-            window_end = first_timestamp + timedelta(hours=window_hours)
-            remaining_seconds = (window_end - datetime.now()).total_seconds()
-            remaining_hours = max(0, remaining_seconds / 3600)
-        else:
-            remaining_hours = window_hours
+        # 剩余时间 = 窗口时长 - 实际运行时长
+        remaining_minutes = max(0, window_minutes - actual_minutes)
 
-        # 当前平均 CPU 使用率
-        avg_cpu = sum(m["cpu_percent"] for m in metrics) / len(metrics)
+        # 目标 CPU 使用率：未来剩余时间内应该保持的 CPU 使用率
+        # 如果还有剩余时间，计算未来应该保持的CPU使用率
+        if remaining_minutes > 0:
+            # 未来可用配额 = 剩余配额
+            # 目标CPU = 剩余配额 / 剩余时间
+            target_cpu_percent = max(0, min(100, remaining_quota / remaining_minutes))
+        else:
+            # 如果已经运行满窗口时长，目标就是限制值
+            target_cpu_percent = avg_limit if remaining_quota >= 0 else 0
 
         return {
             "total_quota": round(total_quota, 2),
             "used_quota": round(used_quota, 2),
             "remaining_quota": round(remaining_quota, 2),
-            "remaining_hours": round(remaining_hours, 2),
-            "avg_cpu_percent": round(avg_cpu, 2)
+            "avg_cpu_percent": round(avg_cpu, 2),
+            "target_cpu_percent": round(target_cpu_percent, 2),
+            "actual_minutes": round(actual_minutes, 2),
+            "window_minutes": window_minutes,
         }
 
     def calculate_safe_cpu_limit(self) -> float:
         """
-        计算当前安全的 CPU 使用上限
+        计算当前安全的 CPU 使用上限（基于滑动窗口）
 
         Returns:
             建议的 CPU 使用上限(百分比)
         """
+        current_time = time.time()
+
+        # 检查缓存是否有效（同一秒内使用缓存）
+        if (
+            self._safe_limit_cache is not None
+            and self._cache_timestamp is not None
+            and current_time - self._cache_timestamp < 1.0
+        ):
+            return self._safe_limit_cache
+
         min_load = self.config.min_load_percent
         max_load = self.config.max_load_percent
 
         # 获取剩余配额信息
         quota_info = self.calculate_remaining_quota()
-        remaining_quota = quota_info["remaining_quota"]
-        remaining_hours = quota_info["remaining_hours"]
-
-        # 如果剩余时间很少,使用保守策略
-        if remaining_hours < 0.1:
-            return min_load
+        remaining_quota = quota_info["remaining_quota"]  # 单位: 百分比·小时
+        target_cpu = quota_info["target_cpu_percent"]  # 目标 CPU 使用率
+        avg_cpu = quota_info["avg_cpu_percent"]  # 当前平均 CPU
 
         # 计算基于剩余配额的安全上限
         # 安全系数 0.9,留 10% 余量
         safety_factor = 0.9
-        interval_seconds = self.config.metrics_interval_seconds
 
-        # 基于剩余配额计算的上限
-        quota_based_limit = (remaining_quota * safety_factor) / (remaining_hours * 3600 / interval_seconds)
+        # 如果剩余配额为正，使用目标CPU作为基准
+        # 如果剩余配额为负，需要更保守的策略
+        if remaining_quota >= 0:
+            # 未超限：使用目标CPU × 安全系数
+            quota_based_limit = target_cpu * safety_factor
+        else:
+            # 已超限：需要降低到目标CPU以下
+            # 目标是让滑动窗口的平均逐渐回到限制内
+            quota_based_limit = target_cpu * safety_factor
 
         # 检查时间段配置,预留配额
         time_slot_reserved = self._calculate_time_slot_reservation()
@@ -122,11 +165,20 @@ class CPUScheduler:
         # 限制在 min_load 和 max_load 之间
         safe_limit = max(min_load, min(max_load, quota_based_limit))
 
-        logger.info(f"计算安全 CPU 限制: quota_based={quota_based_limit:.2f}, "
-                   f"time_slot_reserved={time_slot_reserved:.2f}, "
-                   f"final={safe_limit:.2f}")
+        logger.info(
+            f"计算安全 CPU 限制: avg_cpu={avg_cpu:.2f}%, "
+            f"remaining_quota={remaining_quota:.2f}%·h, "
+            f"target_cpu={target_cpu:.2f}%, "
+            f"quota_based={quota_based_limit:.2f}%, "
+            f"time_slot_reserved={time_slot_reserved:.2f}%, "
+            f"final={safe_limit:.2f}%",
+        )
 
-        return round(safe_limit, 2)
+        # 更新缓存
+        self._safe_limit_cache = round(safe_limit, 2)
+        self._cache_timestamp = current_time
+
+        return self._safe_limit_cache
 
     def _calculate_time_slot_reservation(self) -> float:
         """
@@ -171,12 +223,11 @@ class CPUScheduler:
                 reservation = max_load * slot_duration_hours / window_hours
                 total_reservation += reservation
 
-                logger.info(f"时间段 {slot['start_time']}-{slot['end_time']} "
-                           f"需要预留 {reservation:.2f}% CPU")
+                logger.info(f"时间段 {slot['start_time']}-{slot['end_time']} 需要预留 {reservation:.2f}% CPU")
 
         return round(total_reservation, 2)
 
-    def get_scheduler_status(self) -> Dict[str, Any]:
+    def get_scheduler_status(self) -> dict[str, Any]:
         """
         获取调度器状态信息
 
@@ -189,10 +240,10 @@ class CPUScheduler:
 
         # 计算距离限制的余量
         avg_limit = self.config.avg_load_limit_percent
-        margin = avg_limit - avg_cpu
-        margin_percent = (margin / avg_limit * 100) if avg_limit > 0 else 0
+        margin_absolute = avg_limit - avg_cpu  # 绝对余量 (百分比)
+        margin_percent = (margin_absolute / avg_limit * 100) if avg_limit > 0 else 0  # 相对余量 (%)
 
-        # 风险等级评估
+        # 负载等级评估（基于相对余量）
         if margin_percent > 30:
             risk_level = "low"
         elif margin_percent > 15:
@@ -205,7 +256,8 @@ class CPUScheduler:
         return {
             "rolling_window_avg_cpu": avg_cpu,
             "avg_load_limit": avg_limit,
-            "margin_percent": round(margin_percent, 2),
+            "margin_absolute": round(margin_absolute, 2),  # 绝对余量 (百分比)
+            "margin_percent": round(margin_percent, 2),  # 相对余量 (占限制的百分比)
             "risk_level": risk_level,
             "safe_cpu_limit": safe_limit,
             "data_points": data_points,
@@ -214,11 +266,11 @@ class CPUScheduler:
                 "min_load": self.config.min_load_percent,
                 "max_load": self.config.max_load_percent,
                 "window_hours": self.config.rolling_window_hours,
-                "avg_limit": avg_limit
-            }
+                "avg_limit": avg_limit,
+            },
         }
 
-    def should_throttle_cpu(self, current_cpu: float) -> Tuple[bool, str]:
+    def should_throttle_cpu(self, current_cpu: float) -> tuple[bool, str]:
         """
         判断是否需要限制 CPU 使用
 
@@ -241,4 +293,3 @@ class CPUScheduler:
             return True, f"滚动窗口平均 CPU {avg_cpu}% 接近限制 {avg_limit}%"
 
         return False, "CPU 使用在安全范围内"
-

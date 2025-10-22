@@ -41,54 +41,64 @@ async def metrics_collection_task():
 
     logger.info("性能指标采集任务启动")
 
-    while background_task_running:
-        try:
-            # 采集指标
-            metrics = metrics_collector.collect()
+    try:
+        while background_task_running:
+            try:
+                # 采集指标
+                metrics = metrics_collector.collect()
 
-            # 保存到数据库
-            db.insert_metrics(metrics)
+                # 保存到数据库
+                db.insert_metrics(metrics)
 
-            # 检查是否需要限制 CPU
-            should_throttle, reason = cpu_scheduler.should_throttle_cpu(metrics["cpu_percent"])
-            if should_throttle:
-                logger.warning(f"CPU 限制建议: {reason}")
+                # 检查是否需要限制 CPU
+                should_throttle, reason = cpu_scheduler.should_throttle_cpu(metrics["cpu_percent"])
+                if should_throttle:
+                    logger.warning(f"CPU 限制建议: {reason}")
 
-            # 获取调度器状态
-            status = cpu_scheduler.get_scheduler_status()
-            logger.info(
-                f"CPU: {metrics['cpu_percent']}% | "
-                f"平均: {status['rolling_window_avg_cpu']}% | "
-                f"安全限制: {status['safe_cpu_limit']}% | "
-                f"风险: {status['risk_level']}",
-            )
+                # 获取调度器状态
+                status = cpu_scheduler.get_scheduler_status()
+                logger.info(
+                    f"CPU: {metrics['cpu_percent']}% | "
+                    f"平均: {status['rolling_window_avg_cpu']}% | "
+                    f"安全限制: {status['safe_cpu_limit']}% | "
+                    f"风险: {status['risk_level']}",
+                )
 
-            # 等待下一次采集
-            interval = config.metrics_interval_seconds
-            await asyncio.sleep(interval)
+                # 等待下一次采集
+                interval = config.metrics_interval_seconds
+                await asyncio.sleep(interval)
 
-        except Exception as e:
-            logger.error(f"指标采集错误: {e}", exc_info=True)
-            await asyncio.sleep(10)  # 错误后等待 10 秒重试
+            except Exception as e:
+                logger.error(f"指标采集错误: {e}", exc_info=True)
+                await asyncio.sleep(10)  # 错误后等待 10 秒重试
+
+    except asyncio.CancelledError:
+        logger.info("性能指标采集任务已取消")
+        raise
 
 
 async def cleanup_task():
     """后台数据清理任务"""
     logger.info("数据清理任务启动")
 
-    while background_task_running:
-        try:
-            # 每天清理一次过期数据
-            retention_days = config.history_retention_days
-            db.cleanup_old_metrics(retention_days)
-            logger.info(f"清理了 {retention_days} 天前的历史数据")
+    try:
+        while background_task_running:
+            try:
+                # 每天清理一次过期数据
+                retention_days = config.history_retention_days
+                db.cleanup_old_metrics(retention_days)
+                logger.info(f"清理了 {retention_days} 天前的历史数据")
 
-            # 等待 24 小时
-            await asyncio.sleep(86400)
+                # 等待 24 小时
+                await asyncio.sleep(86400)
 
-        except Exception as e:
-            logger.error(f"数据清理错误: {e}", exc_info=True)
-            await asyncio.sleep(3600)  # 错误后等待 1 小时重试
+            except Exception as e:
+                logger.error(f"数据清理错误: {e}", exc_info=True)
+                await asyncio.sleep(3600)  # 错误后等待 1 小时重试
+
+    except asyncio.CancelledError:
+        logger.info("数据清理任务已取消")
+        raise
 
 
 @asynccontextmanager
@@ -108,8 +118,20 @@ async def lifespan(app: FastAPI):
     global background_task_running
     background_task_running = False
 
-    # 等待后台任务结束
-    await asyncio.gather(metrics_task, cleanup_task_handle, return_exceptions=True)
+    # 取消后台任务
+    metrics_task.cancel()
+    cleanup_task_handle.cancel()
+
+    # 等待任务取消完成（最多等待2秒）
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(metrics_task, cleanup_task_handle, return_exceptions=True),
+            timeout=2.0,
+        )
+    except TimeoutError:
+        logger.warning("后台任务取消超时")
+
+    logger.info("应用已关闭")
 
 
 # 创建 FastAPI 应用

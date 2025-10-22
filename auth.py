@@ -11,9 +11,9 @@ from jose import JWTError, jwt
 from database import Database
 
 # JWT 配置
-SECRET_KEY = "your-secret-key-change-in-production-2024"  # 生产环境应使用环境变量
+SECRET_KEY = "8b1b5ebd49ab49359050403f02008857"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 小时
+ACCESS_TOKEN_EXPIRE_MINUTES = 480
 
 security = HTTPBearer()
 

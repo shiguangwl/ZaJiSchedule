@@ -69,7 +69,7 @@ class TestAPI:
                 print(f"   CPU: {metrics['cpu_percent']}%")
                 print(f"   内存: {metrics['memory_percent']}%")
                 print(f"   安全限制: {scheduler['safe_cpu_limit']}%")
-                print(f"   风险等级: {scheduler['risk_level']}")
+                print(f"   负载等级: {scheduler['risk_level']}")
                 return True
             print(f"❌ 请求失败 - 状态码: {response.status_code}")
             return False

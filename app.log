@@ -1,0 +1,25 @@
+INFO:     Started server process [37665]
+INFO:     Waiting for application startup.
+2025-10-22 16:53:38,715 - __main__ - INFO - 应用启动中...
+2025-10-22 16:53:38,715 - __main__ - INFO - 性能指标采集任务启动
+2025-10-22 16:53:39,723 - scheduler.cpu_scheduler - INFO - 计算安全 CPU 限制: avg_cpu=35.02%, remaining_quota=-120.54%·h, target_cpu=24.98%, quota_based=22.48%, time_slot_reserved=0.00%, final=22.48%
+2025-10-22 16:53:39,723 - __main__ - WARNING - CPU 限制建议: 当前 CPU 47.8% 超过安全限制 22.48%
+2025-10-22 16:53:39,725 - __main__ - INFO - CPU: 47.8% | 平均: 35.02% | 安全限制: 22.48% | 风险: critical
+2025-10-22 16:53:39,726 - __main__ - INFO - 数据清理任务启动
+2025-10-22 16:53:39,726 - __main__ - INFO - 清理了 30 天前的历史数据
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-10-22 16:53:45,736 - scheduler.cpu_scheduler - INFO - 计算安全 CPU 限制: avg_cpu=35.05%, remaining_quota=-121.24%·h, target_cpu=24.95%, quota_based=22.45%, time_slot_reserved=0.00%, final=22.45%
+2025-10-22 16:53:45,736 - __main__ - WARNING - CPU 限制建议: 当前 CPU 43.8% 超过安全限制 22.45%
+2025-10-22 16:53:45,739 - __main__ - INFO - CPU: 43.8% | 平均: 35.05% | 安全限制: 22.45% | 风险: critical
+2025-10-22 16:53:51,750 - scheduler.cpu_scheduler - INFO - 计算安全 CPU 限制: avg_cpu=35.05%, remaining_quota=-121.26%·h, target_cpu=24.95%, quota_based=22.45%, time_slot_reserved=0.00%, final=22.45%
+2025-10-22 16:53:51,750 - __main__ - WARNING - CPU 限制建议: 当前 CPU 35.4% 超过安全限制 22.45%
+2025-10-22 16:53:51,754 - __main__ - INFO - CPU: 35.4% | 平均: 35.05% | 安全限制: 22.45% | 风险: critical
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2025-10-22 16:53:52,766 - __main__ - INFO - 应用关闭中...
+2025-10-22 16:53:52,766 - __main__ - INFO - 性能指标采集任务已取消
+2025-10-22 16:53:52,766 - __main__ - INFO - 数据清理任务已取消
+2025-10-22 16:53:52,766 - __main__ - INFO - 应用已关闭
+INFO:     Application shutdown complete.
+INFO:     Finished server process [37665]

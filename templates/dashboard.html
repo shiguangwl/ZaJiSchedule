@@ -19,7 +19,7 @@
             <small class="text-muted">当前值</small>
         </div>
     </div>
-    
+
     <div class="col-md-3">
         <div class="card metric-card">
             <div class="metric-label">内存使用率</div>
@@ -27,7 +27,7 @@
             <small class="text-muted">当前值</small>
         </div>
     </div>
-    
+
     <div class="col-md-3">
         <div class="card metric-card">
             <div class="metric-label">滚动窗口平均 CPU</div>
@@ -35,10 +35,10 @@
             <small class="text-muted">过去 <span id="windowHours">24</span> 小时</small>
         </div>
     </div>
-    
+
     <div class="col-md-3">
         <div class="card metric-card">
-            <div class="metric-label">风险等级</div>
+            <div class="metric-label">负载等级</div>
             <div class="metric-value" id="riskLevel">--</div>
             <small class="text-muted">系统状态</small>
         </div>
@@ -54,31 +54,69 @@
             </div>
             <div class="card-body">
                 <table class="table table-sm">
+                    <!-- 核心指标 -->
                     <tr>
-                        <td>安全 CPU 限制</td>
-                        <td class="text-end"><strong id="safeCpuLimit">--</strong>%</td>
+                        <td>
+                            <strong>当前 CPU 限制</strong>
+                            <i class="fas fa-info-circle text-muted" data-bs-toggle="tooltip"
+                               title="系统建议的最大CPU使用率，基于配额和安全系数计算"></i>
+                        </td>
+                        <td class="text-end"><strong id="safeCpuLimit" class="text-primary">--</strong>%</td>
                     </tr>
                     <tr>
-                        <td>平均负载限制</td>
-                        <td class="text-end"><strong id="avgLoadLimit">--</strong>%</td>
+                        <td>
+                            <strong>配额余量</strong>
+                            <i class="fas fa-info-circle text-muted" data-bs-toggle="tooltip"
+                               title="24小时窗口的剩余CPU配额。正数表示有余量，负数表示已超限"></i>
+                        </td>
+                        <td class="text-end">
+                            <strong id="remainingQuota">--</strong>
+                            <span id="quotaStatus" class="badge ms-1"></span>
+                        </td>
                     </tr>
                     <tr>
-                        <td>距离限制余量</td>
-                        <td class="text-end"><strong id="marginPercent">--</strong>%</td>
+                        <td>
+                            <strong>距离限制</strong>
+                            <i class="fas fa-info-circle text-muted" data-bs-toggle="tooltip"
+                               title="当前平均CPU与目标限制的差值。正数表示有余量，负数表示已超限"></i>
+                        </td>
+                        <td class="text-end">
+                            <strong id="marginAbsolute">--</strong>%
+                            <span id="marginStatus" class="badge ms-1"></span>
+                        </td>
+                    </tr>
+
+                    <!-- 分隔线 -->
+                    <tr><td colspan="2"><hr class="my-2"></td></tr>
+
+                    <!-- 详细信息 -->
+                    <tr>
+                        <td>
+                            目标平均限制
+                            <i class="fas fa-info-circle text-muted" data-bs-toggle="tooltip"
+                               title="24小时滚动窗口的目标平均CPU使用率"></i>
+                        </td>
+                        <td class="text-end"><span id="avgLoadLimit">--</span>%</td>
                     </tr>
                     <tr>
-                        <td>剩余 CPU 配额</td>
-                        <td class="text-end"><strong id="remainingQuota">--</strong></td>
-                    </tr>
-                    <tr>
-                        <td>数据点数量</td>
-                        <td class="text-end"><strong id="dataPoints">--</strong></td>
+                        <td>
+                            建议 CPU 使用率
+                            <i class="fas fa-info-circle text-muted" data-bs-toggle="tooltip"
+                               title="未来时间内建议保持的CPU使用率，以确保不超限"></i>
+                        </td>
+                        <td class="text-end"><span id="targetCpu">--</span>%</td>
                     </tr>
                 </table>
+
+                <!-- 状态说明 -->
+                <div id="statusExplanation" class="alert alert-sm mt-3" style="display: none;">
+                    <i class="fas fa-lightbulb"></i>
+                    <span id="statusText"></span>
+                </div>
             </div>
         </div>
     </div>
-    
+
     <div class="col-md-6">
         <div class="card">
             <div class="card-header bg-success text-white">
@@ -122,7 +160,7 @@
             </div>
         </div>
     </div>
-    
+
     <div class="col-md-6">
         <div class="card">
             <div class="card-header">
@@ -142,4 +180,3 @@
 {% block extra_js %}
 <script src="/static/js/dashboard.js"></script>
 {% endblock %}
-
