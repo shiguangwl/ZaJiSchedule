@@ -1,10 +1,27 @@
 """
-FastAPI 主应用
+FastAPI 主应用 - 集成 CPU 限制功能
+
+功能:
+1. 启动 FastAPI 应用
+2. 在 cgroup 中运行应用
+3. 自动监控和调整 CPU 限制
+4. 采集性能指标
+
+使用方法:
+    sudo python main.py
+
+要求:
+- Linux 系统支持 cgroups v2
+- root 权限
+- Python 3.8+
 """
 
 import asyncio
 import logging
+import os
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -33,6 +50,121 @@ cpu_scheduler = CPUScheduler(db, config)
 # 后台任务标志
 background_task_running = False
 
+# CPU 限制相关全局变量
+cpu_limiter = None
+cgroup_manager = None
+is_managed_mode = False
+
+
+class CGroupManager:
+    """cgroup 管理器"""
+
+    def __init__(self, cgroup_name: str = "zajischedule"):
+        self.cgroup_name = cgroup_name
+        self.cgroup_path = Path(f"/sys/fs/cgroup/{cgroup_name}")
+        self.cpu_max_file = self.cgroup_path / "cpu.max"
+        self.procs_file = self.cgroup_path / "cgroup.procs"
+
+    def setup(self) -> None:
+        """设置 cgroup"""
+        try:
+            # 创建 cgroup
+            if not self.cgroup_path.exists():
+                self.cgroup_path.mkdir(parents=True, exist_ok=True)
+                logger.info(f"创建 cgroup: {self.cgroup_path}")
+
+            # 启用 CPU 控制器
+            controllers_file = Path("/sys/fs/cgroup/cgroup.subtree_control")
+            current_controllers = controllers_file.read_text().strip()
+            if "cpu" not in current_controllers:
+                controllers_file.write_text("+cpu")
+                logger.info("启用 CPU 控制器")
+
+        except Exception as e:
+            logger.error(f"设置 cgroup 失败: {e}")
+            raise
+
+    def set_cpu_limit(self, cpu_percent: float) -> None:
+        """设置 CPU 限制"""
+        try:
+            cpu_percent = max(0, min(100, cpu_percent))
+            period = 100000
+            quota = int(cpu_percent * period / 100)
+            self.cpu_max_file.write_text(f"{quota} {period}")
+            logger.info(f"设置 CPU 限制: {cpu_percent:.2f}%")
+        except Exception as e:
+            logger.error(f"设置 CPU 限制失败: {e}")
+
+    def get_current_limit(self) -> float:
+        """获取当前 CPU 限制"""
+        try:
+            cpu_max_value = self.cpu_max_file.read_text().strip()
+            if cpu_max_value.startswith("max"):
+                return 100.0
+            quota, period = map(int, cpu_max_value.split())
+            return (quota / period) * 100
+        except Exception:
+            return 0.0
+
+    def cleanup(self) -> None:
+        """清理 cgroup"""
+        try:
+            if self.cgroup_path.exists():
+                # 移除所有进程到根 cgroup
+                if self.procs_file.exists():
+                    procs = self.procs_file.read_text().strip().split("\n")
+                    root_procs = Path("/sys/fs/cgroup/cgroup.procs")
+                    for proc in procs:
+                        if proc:
+                            try:
+                                root_procs.write_text(proc)
+                            except Exception:
+                                pass
+
+                # 删除 cgroup
+                self.cgroup_path.rmdir()
+                logger.info("cgroup 已清理")
+        except Exception as e:
+            logger.warning(f"清理 cgroup 失败: {e}")
+
+
+async def monitor_and_adjust_cpu_limit():
+    """监控并调整 CPU 限制"""
+    global background_task_running
+
+    if not is_managed_mode or not cgroup_manager:
+        return
+
+    logger.info("开始监控和调整 CPU 限制")
+
+    try:
+        while background_task_running:
+            try:
+                # 获取调度器状态
+                status = cpu_scheduler.get_scheduler_status()
+                safe_limit = status["safe_cpu_limit"]
+                current_limit = cgroup_manager.get_current_limit()
+
+                # 如果差异超过 5%，则调整
+                if abs(safe_limit - current_limit) > 5:
+                    logger.info(
+                        f"调整 CPU 限制: {current_limit:.2f}% → {safe_limit:.2f}% "
+                        f"(当前CPU: {status['current_cpu_percent']:.2f}%, "
+                        f"平均CPU: {status['rolling_window_avg_cpu']:.2f}%)",
+                    )
+                    cgroup_manager.set_cpu_limit(safe_limit)
+
+                # 每 10 秒检查一次
+                await asyncio.sleep(10)
+
+            except Exception as e:
+                logger.error(f"监控错误: {e}", exc_info=True)
+                await asyncio.sleep(10)
+
+    except asyncio.CancelledError:
+        logger.info("监控任务已取消")
+        raise
+
 
 async def metrics_collection_task():
     """后台性能指标采集任务"""
@@ -49,11 +181,6 @@ async def metrics_collection_task():
 
                 # 保存到数据库
                 db.insert_metrics(metrics)
-
-                # 检查是否需要限制 CPU
-                should_throttle, reason = cpu_scheduler.should_throttle_cpu(metrics["cpu_percent"])
-                if should_throttle:
-                    logger.warning(f"CPU 限制建议: {reason}")
 
                 # 获取调度器状态
                 status = cpu_scheduler.get_scheduler_status()
@@ -110,6 +237,7 @@ async def lifespan(app: FastAPI):
     # 启动后台任务
     metrics_task = asyncio.create_task(metrics_collection_task())
     cleanup_task_handle = asyncio.create_task(cleanup_task())
+    monitor_task = asyncio.create_task(monitor_and_adjust_cpu_limit())
 
     yield
 
@@ -121,15 +249,20 @@ async def lifespan(app: FastAPI):
     # 取消后台任务
     metrics_task.cancel()
     cleanup_task_handle.cancel()
+    monitor_task.cancel()
 
     # 等待任务取消完成（最多等待2秒）
     try:
         await asyncio.wait_for(
-            asyncio.gather(metrics_task, cleanup_task_handle, return_exceptions=True),
+            asyncio.gather(metrics_task, cleanup_task_handle, monitor_task, return_exceptions=True),
             timeout=2.0,
         )
     except TimeoutError:
         logger.warning("后台任务取消超时")
+
+    # 清理 cgroup
+    if is_managed_mode and cgroup_manager:
+        cgroup_manager.cleanup()
 
     logger.info("应用已关闭")
 
@@ -205,7 +338,43 @@ async def health_check():
     }
 
 
+def init_cgroup_management():
+    """初始化 cgroup 管理"""
+    global cgroup_manager, is_managed_mode
+
+    # 检查 root 权限
+    if os.geteuid() != 0:
+        logger.error("错误: 需要 root 权限来管理 cgroups")
+        logger.error("请使用: sudo python main.py")
+        sys.exit(1)
+
+    # 检查 cgroups v2 支持
+    if not Path("/sys/fs/cgroup/cgroup.controllers").exists():
+        logger.error("错误: 系统不支持 cgroups v2")
+        sys.exit(1)
+
+    # 初始化 cgroup 管理器
+    try:
+        cgroup_manager = CGroupManager()
+        cgroup_manager.setup()
+
+        # 设置初始 CPU 限制
+        initial_limit = config.avg_load_limit_percent
+        cgroup_manager.set_cpu_limit(initial_limit)
+        logger.info(f"初始 CPU 限制: {initial_limit}%")
+
+        is_managed_mode = True
+        logger.info("CPU 限制管理已启用")
+
+    except Exception as e:
+        logger.error(f"初始化 cgroup 失败: {e}", exc_info=True)
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     import uvicorn
+
+    # 初始化 cgroup 管理
+    init_cgroup_management()
 
     uvicorn.run(app, host="0.0.0.0", port=8000)

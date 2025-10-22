@@ -1,5 +1,20 @@
 #!/bin/bash
-# CPU智能调度系统启动脚本
+#
+# CPU 智能调度系统启动脚本
+#
+# 功能:
+# 1. 检查 root 权限和 cgroups v2 支持
+# 2. 设置虚拟环境
+# 3. 启动应用并自动应用 CPU 限制
+#
+# 使用方法:
+#   sudo bash run.sh
+#
+# 要求:
+# - root 权限
+# - Linux 系统支持 cgroups v2
+# - Python 3.8+
+#
 
 set -e
 
@@ -9,45 +24,71 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}=== CPU智能调度系统启动脚本 ===${NC}"
+# 日志函数
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
 
-# 检查Python版本
-echo -e "\n${YELLOW}检查Python版本...${NC}"
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+log_info "=== CPU 智能调度系统启动脚本 ==="
+
+# 检查 root 权限
+if [ "$EUID" -ne 0 ]; then
+    log_error "需要 root 权限来管理 cgroups"
+    echo "请使用: sudo bash run.sh"
+    exit 1
+fi
+
+# 检查 cgroups v2 支持
+if [ ! -f "/sys/fs/cgroup/cgroup.controllers" ]; then
+    log_error "系统不支持 cgroups v2"
+    exit 1
+fi
+
+log_info "权限检查通过"
+
+# 检查 Python 版本
+log_info "检查 Python 版本..."
 if ! command -v python3 &> /dev/null; then
-    echo -e "${RED}错误: 未找到python3${NC}"
+    log_error "未找到 python3"
     exit 1
 fi
 
 PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
-echo "Python版本: $PYTHON_VERSION"
+log_info "Python 版本: $PYTHON_VERSION"
 
 # 检查虚拟环境
 if [ ! -d ".venv" ]; then
-    echo -e "${YELLOW}虚拟环境不存在,正在创建...${NC}"
+    log_info "虚拟环境不存在，正在创建..."
     python3 -m venv .venv
 fi
 
 # 激活虚拟环境
-echo -e "\n${YELLOW}激活虚拟环境...${NC}"
+log_info "激活虚拟环境..."
 source .venv/bin/activate
 
 # 安装依赖
-echo -e "\n${YELLOW}检查依赖包...${NC}"
+log_info "检查依赖包..."
 pip install -q -r requirements.txt
 
-# 检查root权限(cgroup需要)
-if [ "$EUID" -ne 0 ]; then
-    echo -e "\n${YELLOW}警告: 未以root权限运行,cgroup功能将被禁用${NC}"
-    echo -e "${YELLOW}如需启用cgroup控制,请使用: sudo bash run.sh${NC}"
-    export CPU_SCHEDULER_CGROUP_ENABLED=false
-fi
-
 # 创建必要的目录
-mkdir -p static/js static/css templates
+mkdir -p static/js static/css templates logs
 
 # 启动应用
-echo -e "\n${GREEN}启动CPU智能调度系统...${NC}"
-echo -e "${GREEN}访问地址: http://localhost:8000${NC}"
-echo -e "${GREEN}默认账号: admin / admin123${NC}\n"
+log_info "=========================================="
+log_info "启动 CPU 智能调度系统"
+log_info "=========================================="
+log_info "访问地址: http://localhost:8000"
+log_info "默认账号: admin / admin123"
+log_info "=========================================="
+log_info "按 Ctrl+C 停止应用"
+log_info "=========================================="
 
-python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+python3 main.py
