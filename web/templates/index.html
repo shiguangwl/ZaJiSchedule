@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPU智能调度系统 - 监控大盘</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-gradient-primary sticky-top shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand d-flex align-items-center" href="#">
+                <i class="bi bi-cpu-fill me-2 fs-4"></i>
+                <span class="fw-bold">CPU智能调度系统</span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#"><i class="bi bi-speedometer2 me-1"></i>监控大盘</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#systemInfoModal">
+                            <i class="bi bi-info-circle me-1"></i>系统信息
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/docs" target="_blank"><i class="bi bi-book me-1"></i>API文档</a>
+                    </li>
+                </ul>
+                <div class="d-flex align-items-center ms-3">
+                    <span class="me-2 text-white-50 small">连接状态:</span>
+                    <span id="connection-status">
+                        <span class="badge bg-secondary"><i class="bi bi-circle-fill pulse me-1"></i>连接中...</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 标签页导航 -->
+    <div class="container-fluid px-4 mt-3">
+        <ul class="nav nav-pills nav-fill bg-white rounded shadow-sm p-2" id="mainTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="dashboard-tab" data-bs-toggle="pill" data-bs-target="#dashboard" type="button" role="tab">
+                    <i class="bi bi-speedometer2 me-2"></i>监控大盘
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="history-tab" data-bs-toggle="pill" data-bs-target="#history" type="button" role="tab">
+                    <i class="bi bi-clock-history me-2"></i>历史数据
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="config-tab" data-bs-toggle="pill" data-bs-target="#config" type="button" role="tab">
+                    <i class="bi bi-gear-fill me-2"></i>配置管理
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="alerts-tab" data-bs-toggle="pill" data-bs-target="#alerts" type="button" role="tab">
+                    <i class="bi bi-bell-fill me-2"></i>告警管理
+                    <span class="badge bg-danger ms-1" id="alert-count" style="display:none;">0</span>
+                </button>
+            </li>
+        </ul>
+    </div>
+
+    <!-- 标签页内容 -->
+    <div class="container-fluid mt-3 px-4">
+        <div class="tab-content" id="mainTabsContent">
+            <!-- 监控大盘标签页 -->
+            <div class="tab-pane fade show active" id="dashboard" role="tabpanel">
+                <!-- 核心指标卡片 -->
+                <div class="row g-3 mb-4">
+            <div class="col-xl-3 col-md-6">
+                <div class="card metric-card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div>
+                                <h6 class="text-muted mb-1 text-uppercase small fw-semibold">
+                                    <i class="bi bi-cpu me-1"></i>CPU使用率
+                                </h6>
+                            </div>
+                            <div class="metric-icon bg-primary-subtle">
+                                <i class="bi bi-activity text-primary"></i>
+                            </div>
+                        </div>
+                        <h2 class="mb-2 fw-bold" id="cpu-usage">
+                            <span class="counter">0.0</span><span class="fs-5 text-muted">%</span>
+                        </h2>
+                        <div class="progress mb-2" style="height: 6px;">
+                            <div class="progress-bar bg-primary" id="cpu-usage-bar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <small class="text-muted">
+                            <i class="bi bi-shield-check me-1"></i>限制: <span id="cpu-limit" class="fw-semibold">0.0%</span>
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-3 col-md-6">
+                <div class="card metric-card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div>
+                                <h6 class="text-muted mb-1 text-uppercase small fw-semibold">
+                                    <i class="bi bi-memory me-1"></i>内存使用率
+                                </h6>
+                            </div>
+                            <div class="metric-icon bg-success-subtle">
+                                <i class="bi bi-hdd-stack text-success"></i>
+                            </div>
+                        </div>
+                        <h2 class="mb-2 fw-bold" id="memory-usage">
+                            <span class="counter">0.0</span><span class="fs-5 text-muted">%</span>
+                        </h2>
+                        <div class="progress mb-2" style="height: 6px;">
+                            <div class="progress-bar bg-success" id="memory-usage-bar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle me-1"></i>系统内存占用
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-3 col-md-6">
+                <div class="card metric-card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div>
+                                <h6 class="text-muted mb-1 text-uppercase small fw-semibold">
+                                    <i class="bi bi-clock-history me-1"></i>12小时平均
+                                </h6>
+                            </div>
+                            <div class="metric-icon bg-warning-subtle">
+                                <i class="bi bi-graph-up text-warning"></i>
+                            </div>
+                        </div>
+                        <h2 class="mb-2 fw-bold" id="avg-12h">
+                            <span class="counter">0.0</span><span class="fs-5 text-muted">%</span>
+                        </h2>
+                        <div class="progress mb-2" style="height: 6px;">
+                            <div class="progress-bar bg-warning" id="avg-12h-bar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <small class="text-muted">
+                            <i class="bi bi-battery-half me-1"></i>剩余: <span id="avg-quota" class="fw-semibold text-warning">0.0%</span>
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-3 col-md-6">
+                <div class="card metric-card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div>
+                                <h6 class="text-muted mb-1 text-uppercase small fw-semibold">
+                                    <i class="bi bi-lightning-charge me-1"></i>24小时峰值
+                                </h6>
+                            </div>
+                            <div class="metric-icon bg-danger-subtle">
+                                <i class="bi bi-speedometer2 text-danger"></i>
+                            </div>
+                        </div>
+                        <h2 class="mb-2 fw-bold" id="peak-24h">
+                            <span class="counter">0</span><span class="fs-5 text-muted">s</span>
+                        </h2>
+                        <div class="progress mb-2" style="height: 6px;">
+                            <div class="progress-bar bg-danger" id="peak-24h-bar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <small class="text-muted">
+                            <i class="bi bi-hourglass-split me-1"></i>剩余: <span id="peak-quota" class="fw-semibold text-danger">0s</span>
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 调度策略状态 -->
+        <div class="row g-3 mb-4">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="row align-items-center">
+                            <div class="col-md-3">
+                                <h6 class="text-muted mb-2 small fw-semibold">
+                                    <i class="bi bi-gear-fill me-1"></i>当前调度策略
+                                </h6>
+                                <h5 class="mb-0 fw-bold" id="scheduler-strategy">
+                                    <span class="badge bg-info-subtle text-info px-3 py-2">初始化中...</span>
+                                </h5>
+                            </div>
+                            <div class="col-md-9">
+                                <div class="row g-3 text-center">
+                                    <div class="col-md-3">
+                                        <small class="text-muted d-block mb-1">配额状态</small>
+                                        <span class="badge bg-light text-dark" id="quota-status">--</span>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted d-block mb-1">调整速度</small>
+                                        <span class="badge bg-light text-dark" id="adjustment-speed">--</span>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted d-block mb-1">活跃预留</small>
+                                        <span class="badge bg-light text-dark" id="active-reservations">0</span>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted d-block mb-1">系统运行时间</small>
+                                        <span class="badge bg-light text-dark" id="uptime">--</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 图表区域 -->
+        <div class="row g-3 mb-4">
+            <div class="col-xl-8">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white border-0 pt-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0 fw-bold">
+                                <i class="bi bi-graph-up-arrow me-2 text-primary"></i>实时CPU监控
+                            </h5>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-outline-secondary active" data-chart-range="60">1分钟</button>
+                                <button type="button" class="btn btn-outline-secondary" data-chart-range="300">5分钟</button>
+                                <button type="button" class="btn btn-outline-secondary" data-chart-range="600">10分钟</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="cpu-chart" height="80"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-4">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white border-0 pt-3">
+                        <h5 class="mb-0 fw-bold">
+                            <i class="bi bi-pie-chart-fill me-2 text-success"></i>系统资源分布
+                        </h5>
+                    </div>
+                    <div class="card-body d-flex align-items-center justify-content-center">
+                        <canvas id="resource-chart" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 历史趋势和网络IO -->
+        <div class="row g-3 mb-4">
+            <div class="col-xl-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white border-0 pt-3">
+                        <h5 class="mb-0 fw-bold">
+                            <i class="bi bi-bar-chart-line me-2 text-info"></i>配额使用趋势
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="quota-trend-chart" height="100"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white border-0 pt-3">
+                        <h5 class="mb-0 fw-bold">
+                            <i class="bi bi-hdd-network me-2 text-warning"></i>磁盘与网络IO
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-6">
+                                <div class="p-3 bg-light rounded">
+                                    <small class="text-muted d-block mb-1">
+                                        <i class="bi bi-hdd me-1"></i>磁盘读取
+                                    </small>
+                                    <h6 class="mb-0 fw-bold" id="disk-read">0 KB/s</h6>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="p-3 bg-light rounded">
+                                    <small class="text-muted d-block mb-1">
+                                        <i class="bi bi-hdd-fill me-1"></i>磁盘写入
+                                    </small>
+                                    <h6 class="mb-0 fw-bold" id="disk-write">0 KB/s</h6>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="p-3 bg-light rounded">
+                                    <small class="text-muted d-block mb-1">
+                                        <i class="bi bi-arrow-down-circle me-1"></i>网络接收
+                                    </small>
+                                    <h6 class="mb-0 fw-bold" id="network-in">0 KB/s</h6>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="p-3 bg-light rounded">
+                                    <small class="text-muted d-block mb-1">
+                                        <i class="bi bi-arrow-up-circle me-1"></i>网络发送
+                                    </small>
+                                    <h6 class="mb-0 fw-bold" id="network-out">0 KB/s</h6>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 配额预留管理 -->
+        <div class="row g-3 mb-4">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 pt-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0 fw-bold">
+                                <i class="bi bi-calendar-check me-2 text-primary"></i>配额预留管理
+                            </h5>
+                            <button class="btn btn-primary btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#reservationModal">
+                                <i class="bi bi-plus-circle me-1"></i>新建预留
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="reservations-list">
+                            <div class="text-center py-4">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">加载中...</span>
+                                </div>
+                                <p class="text-muted mt-2 mb-0">加载预留列表...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 系统日志和事件 -->
+        <div class="row g-3 mb-4">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 pt-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0 fw-bold">
+                                <i class="bi bi-terminal me-2 text-success"></i>系统日志
+                            </h5>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-outline-secondary active" data-log-filter="all">全部</button>
+                                <button type="button" class="btn btn-outline-secondary" data-log-filter="info">信息</button>
+                                <button type="button" class="btn btn-outline-secondary" data-log-filter="warning">警告</button>
+                                <button type="button" class="btn btn-outline-secondary" data-log-filter="error">错误</button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="clearLogs()">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="system-logs" class="log-container">
+                            <div class="log-entry text-muted text-center py-3">
+                                <i class="bi bi-hourglass-split me-2"></i>等待日志输出...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 历史数据标签页 -->
+            <div class="tab-pane fade" id="history" role="tabpanel">
+                <div class="row g-3 mb-4">
+                    <div class="col-12">
+                        <div class="card border-0 shadow-sm">
+                            <div class="card-header bg-white border-0 pt-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0 fw-bold">
+                                        <i class="bi bi-graph-up me-2 text-primary"></i>历史监控数据
+                                    </h5>
+                                    <div class="btn-group" role="group">
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="loadHistory(1)">1小时</button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="loadHistory(6)">6小时</button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm active" onclick="loadHistory(24)">24小时</button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="loadHistory(168)">7天</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="history-chart" height="100"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="card border-0 shadow-sm">
+                            <div class="card-header bg-white border-0 pt-3">
+                                <h6 class="mb-0 fw-semibold"><i class="bi bi-bar-chart me-2"></i>CPU使用统计</h6>
+                            </div>
+                            <div class="card-body">
+                                <table class="table table-sm">
+                                    <tbody>
+                                        <tr><td>平均使用率</td><td class="fw-bold" id="hist-avg-cpu">--</td></tr>
+                                        <tr><td>最大使用率</td><td class="fw-bold" id="hist-max-cpu">--</td></tr>
+                                        <tr><td>最小使用率</td><td class="fw-bold" id="hist-min-cpu">--</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card border-0 shadow-sm">
+                            <div class="card-header bg-white border-0 pt-3">
+                                <h6 class="mb-0 fw-semibold"><i class="bi bi-hdd me-2"></i>内存使用统计</h6>
+                            </div>
+                            <div class="card-body">
+                                <table class="table table-sm">
+                                    <tbody>
+                                        <tr><td>平均使用率</td><td class="fw-bold" id="hist-avg-mem">--</td></tr>
+                                        <tr><td>最大使用率</td><td class="fw-bold" id="hist-max-mem">--</td></tr>
+                                        <tr><td>最小使用率</td><td class="fw-bold" id="hist-min-mem">--</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 配置管理标签页 -->
+            <div class="tab-pane fade" id="config" role="tabpanel">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="card border-0 shadow-sm">
+                            <div class="card-header bg-white border-0 pt-3">
+                                <h5 class="mb-0 fw-bold"><i class="bi bi-sliders me-2 text-primary"></i>限制配置</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="limits-form">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">12小时平均限制 (%)</label>
+                                        <input type="number" class="form-control" id="cfg-avg-limit" min="0" max="100" step="0.1">
+                                        <small class="text-muted">过去12小时CPU平均使用率上限</small>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">24小时峰值限制 (秒)</label>
+                                        <input type="number" class="form-control" id="cfg-peak-limit" min="0" step="1">
+                                        <small class="text-muted">过去24小时100%CPU使用时长上限</small>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">绝对最小CPU限制 (%)</label>
+                                        <input type="number" class="form-control" id="cfg-min-cpu" min="0" max="100" step="0.1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">绝对最大CPU限制 (%)</label>
+                                        <input type="number" class="form-control" id="cfg-max-cpu" min="0" max="100" step="0.1">
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="card border-0 shadow-sm">
+                            <div class="card-header bg-white border-0 pt-3">
+                                <h5 class="mb-0 fw-bold"><i class="bi bi-gear-fill me-2 text-success"></i>调度策略</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="scheduler-form">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">配额充足时CPU限制 (%)</label>
+                                        <input type="number" class="form-control" id="cfg-high-limit" min="0" max="100" step="0.1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">配额紧张时CPU限制 (%)</label>
+                                        <input type="number" class="form-control" id="cfg-medium-limit" min="0" max="100" step="0.1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">配额即将耗尽时CPU限制 (%)</label>
+                                        <input type="number" class="form-control" id="cfg-low-limit" min="0" max="100" step="0.1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">紧急模式CPU限制 (%)</label>
+                                        <input type="number" class="form-control" id="cfg-emergency-limit" min="0" max="100" step="0.1">
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12">
+                        <div class="card border-0 shadow-sm">
+                            <div class="card-body text-center">
+                                <button class="btn btn-primary btn-lg px-5" onclick="saveConfig()">
+                                    <i class="bi bi-save me-2"></i>保存配置
+                                </button>
+                                <button class="btn btn-outline-secondary btn-lg px-5 ms-3" onclick="loadConfig()">
+                                    <i class="bi bi-arrow-clockwise me-2"></i>重新加载
+                                </button>
+                                <p class="text-muted mt-3 mb-0">
+                                    <i class="bi bi-info-circle me-1"></i>部分配置修改需要重启服务才能生效
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 告警管理标签页 -->
+            <div class="tab-pane fade" id="alerts" role="tabpanel">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <div class="card border-0 shadow-sm">
+                            <div class="card-header bg-white border-0 pt-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0 fw-bold">
+                                        <i class="bi bi-bell-fill me-2 text-warning"></i>告警历史
+                                    </h5>
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button type="button" class="btn btn-outline-secondary active" onclick="filterAlerts('all')">全部</button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="filterAlerts('error')">错误</button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="filterAlerts('warning')">警告</button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="filterAlerts('info')">信息</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body p-0">
+                                <div id="alerts-list" class="table-responsive">
+                                    <table class="table table-hover mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th width="180">时间</th>
+                                                <th width="100">级别</th>
+                                                <th width="150">类型</th>
+                                                <th>消息</th>
+                                                <th width="100">状态</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="alerts-tbody">
+                                            <tr>
+                                                <td colspan="5" class="text-center py-4 text-muted">
+                                                    <i class="bi bi-inbox me-2"></i>暂无告警记录
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 页脚 -->
+    <footer class="bg-light py-3 mt-5 border-top">
+        <div class="container-fluid px-4">
+            <div class="row align-items-center">
+                <div class="col-md-6 text-center text-md-start">
+                    <small class="text-muted">
+                        <i class="bi bi-c-circle me-1"></i>2024 CPU智能调度系统 |
+                        <a href="https://github.com" class="text-decoration-none" target="_blank">
+                            <i class="bi bi-github me-1"></i>GitHub
+                        </a>
+                    </small>
+                </div>
+                <div class="col-md-6 text-center text-md-end">
+                    <small class="text-muted">
+                        <i class="bi bi-code-slash me-1"></i>基于 FastAPI + Python 3.12 构建
+                    </small>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- 新建预留模态框 -->
+    <div class="modal fade" id="reservationModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">
+                        <i class="bi bi-calendar-plus me-2"></i>新建配额预留
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <form id="reservation-form">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="res-name" class="form-label fw-semibold">
+                                    <i class="bi bi-tag me-1"></i>预留名称 <span class="text-danger">*</span>
+                                </label>
+                                <input type="text" class="form-control" id="res-name" placeholder="例如: 数据备份任务" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="res-priority" class="form-label fw-semibold">
+                                    <i class="bi bi-star me-1"></i>优先级 (1-10) <span class="text-danger">*</span>
+                                </label>
+                                <input type="number" class="form-control" id="res-priority" min="1" max="10" value="5" required>
+                                <small class="text-muted">数字越大优先级越高</small>
+                            </div>
+                            <div class="col-12">
+                                <label for="res-description" class="form-label fw-semibold">
+                                    <i class="bi bi-file-text me-1"></i>描述
+                                </label>
+                                <textarea class="form-control" id="res-description" rows="2" placeholder="简要描述此预留的用途..."></textarea>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="res-start-time" class="form-label fw-semibold">
+                                    <i class="bi bi-clock me-1"></i>开始时间 <span class="text-danger">*</span>
+                                </label>
+                                <input type="datetime-local" class="form-control" id="res-start-time" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="res-end-time" class="form-label fw-semibold">
+                                    <i class="bi bi-clock-fill me-1"></i>结束时间 <span class="text-danger">*</span>
+                                </label>
+                                <input type="datetime-local" class="form-control" id="res-end-time" required>
+                            </div>
+                            <div class="col-12">
+                                <label for="res-cpu-quota" class="form-label fw-semibold">
+                                    <i class="bi bi-cpu me-1"></i>CPU配额 <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group">
+                                    <input type="range" class="form-range" id="res-cpu-quota-range" min="0" max="100" value="80"
+                                           oninput="document.getElementById('res-cpu-quota').value = this.value">
+                                    <input type="number" class="form-control" id="res-cpu-quota" min="0" max="100" value="80"
+                                           style="max-width: 100px;" oninput="document.getElementById('res-cpu-quota-range').value = this.value" required>
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <small class="text-muted">预留期间保证的最低CPU配额</small>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i>取消
+                    </button>
+                    <button type="button" class="btn btn-primary" onclick="createReservation()">
+                        <i class="bi bi-check-circle me-1"></i>创建预留
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 系统信息模态框 -->
+    <div class="modal fade" id="systemInfoModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title">
+                        <i class="bi bi-info-circle-fill me-2"></i>系统信息
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <h6 class="fw-bold mb-3">
+                                <i class="bi bi-server me-2 text-primary"></i>系统配置
+                            </h6>
+                            <table class="table table-sm">
+                                <tbody>
+                                    <tr>
+                                        <td class="text-muted">CPU核心数</td>
+                                        <td class="fw-semibold" id="sys-cpu-count">--</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-muted">总内存</td>
+                                        <td class="fw-semibold" id="sys-total-memory">--</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-muted">操作系统</td>
+                                        <td class="fw-semibold" id="sys-os">--</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-muted">Python版本</td>
+                                        <td class="fw-semibold" id="sys-python">--</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="fw-bold mb-3">
+                                <i class="bi bi-gear-fill me-2 text-success"></i>调度配置
+                            </h6>
+                            <table class="table table-sm">
+                                <tbody>
+                                    <tr>
+                                        <td class="text-muted">12小时限制</td>
+                                        <td class="fw-semibold">≤ 30%</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-muted">24小时峰值</td>
+                                        <td class="fw-semibold">≤ 600s</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-muted">监控间隔</td>
+                                        <td class="fw-semibold">1秒</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-muted">cgroup状态</td>
+                                        <td class="fw-semibold" id="sys-cgroup">--</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="col-12">
+                            <h6 class="fw-bold mb-3">
+                                <i class="bi bi-shield-check me-2 text-warning"></i>调度策略说明
+                            </h6>
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-sm">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>策略模式</th>
+                                            <th>触发条件</th>
+                                            <th>CPU限制</th>
+                                            <th>调整速度</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><span class="badge bg-success">配额充足</span></td>
+                                            <td>剩余配额 &gt; 20%</td>
+                                            <td>85%</td>
+                                            <td>1.0x</td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge bg-warning">配额紧张</span></td>
+                                            <td>5% &lt; 剩余配额 ≤ 20%</td>
+                                            <td>60%</td>
+                                            <td>0.7x</td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge bg-orange">即将耗尽</span></td>
+                                            <td>1% &lt; 剩余配额 ≤ 5%</td>
+                                            <td>35%</td>
+                                            <td>0.5x</td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge bg-danger">紧急模式</span></td>
+                                            <td>剩余配额 ≤ 1%</td>
+                                            <td>20%</td>
+                                            <td>立即限制</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
