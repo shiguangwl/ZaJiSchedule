@@ -7,6 +7,8 @@ import time
 from datetime import datetime, timedelta
 from typing import Any
 
+import psutil
+
 from config import ConfigManager
 from database import Database
 
@@ -140,13 +142,24 @@ class CPUScheduler:
 
         # 获取剩余配额信息
         quota_info = self.calculate_remaining_quota()
-        remaining_quota = quota_info["remaining_quota"]  # 单位: 百分比·小时
+        remaining_quota = quota_info["remaining_quota"]  # 单位: 百分比·分钟
         target_cpu = quota_info["target_cpu_percent"]  # 目标 CPU 使用率
         avg_cpu = quota_info["avg_cpu_percent"]  # 当前平均 CPU
 
         # 计算基于剩余配额的安全上限
-        # 安全系数 0.9,留 10% 余量
-        safety_factor = 0.9
+        # 从配置中获取安全系数
+        safety_factor = self.config.safety_factor
+
+        # 启动初期保护: 如果数据不足窗口时长的阈值,使用更保守的安全系数
+        window_minutes = self.config.rolling_window_hours * 60
+        actual_minutes = quota_info["actual_minutes"]
+        threshold_percent = self.config.startup_data_threshold_percent
+        if actual_minutes < window_minutes * (threshold_percent / 100):
+            safety_factor = self.config.startup_safety_factor
+            logger.info(
+                f"启动初期保护: 数据不足({actual_minutes:.0f}min < {window_minutes * threshold_percent / 100:.0f}min), "
+                f"使用启动安全系数 {safety_factor}",
+            )
 
         # 如果剩余配额为正，使用目标CPU作为基准
         # 如果剩余配额为负，需要更保守的策略
@@ -167,7 +180,7 @@ class CPUScheduler:
 
         logger.info(
             f"计算安全 CPU 限制: avg_cpu={avg_cpu:.2f}%, "
-            f"remaining_quota={remaining_quota:.2f}%·h, "
+            f"remaining_quota={remaining_quota:.2f}%·min, "
             f"target_cpu={target_cpu:.2f}%, "
             f"quota_based={quota_based_limit:.2f}%, "
             f"time_slot_reserved={time_slot_reserved:.2f}%, "
@@ -192,7 +205,6 @@ class CPUScheduler:
             return 0.0
 
         now = datetime.now()
-        now.time()
 
         total_reservation = 0.0
         window_hours = self.config.rolling_window_hours
@@ -238,6 +250,9 @@ class CPUScheduler:
         quota_info = self.calculate_remaining_quota()
         safe_limit = self.calculate_safe_cpu_limit()
 
+        # 获取当前CPU使用率
+        current_cpu = psutil.cpu_percent(interval=None)
+
         # 计算距离限制的余量
         avg_limit = self.config.avg_load_limit_percent
         margin_absolute = avg_limit - avg_cpu  # 绝对余量 (百分比)
@@ -254,6 +269,7 @@ class CPUScheduler:
             risk_level = "critical"
 
         return {
+            "current_cpu_percent": current_cpu,  # 当前瞬时CPU使用率
             "rolling_window_avg_cpu": avg_cpu,
             "avg_load_limit": avg_limit,
             "margin_absolute": round(margin_absolute, 2),  # 绝对余量 (百分比)

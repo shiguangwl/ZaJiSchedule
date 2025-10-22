@@ -19,7 +19,6 @@ FastAPI 主应用 - 集成 CPU 限制功能
 import asyncio
 import logging
 import os
-import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -154,8 +153,9 @@ async def monitor_and_adjust_cpu_limit():
                     )
                     cgroup_manager.set_cpu_limit(safe_limit)
 
-                # 每 10 秒检查一次
-                await asyncio.sleep(10)
+                # 与指标采集频率保持一致,避免基于相同数据重复调整
+                interval = config.metrics_interval_seconds
+                await asyncio.sleep(interval)
 
             except Exception as e:
                 logger.error(f"监控错误: {e}", exc_info=True)
@@ -339,19 +339,22 @@ async def health_check():
 
 
 def init_cgroup_management():
-    """初始化 cgroup 管理"""
+    """初始化 cgroup 管理(可选,失败时优雅降级)"""
     global cgroup_manager, is_managed_mode
 
     # 检查 root 权限
     if os.geteuid() != 0:
-        logger.error("错误: 需要 root 权限来管理 cgroups")
-        logger.error("请使用: sudo python main.py")
-        sys.exit(1)
+        logger.warning("警告: 没有 root 权限,无法使用 cgroup CPU 限制功能")
+        logger.warning("系统将以监控模式运行(仅采集指标,不限制CPU)")
+        is_managed_mode = False
+        return
 
     # 检查 cgroups v2 支持
     if not Path("/sys/fs/cgroup/cgroup.controllers").exists():
-        logger.error("错误: 系统不支持 cgroups v2")
-        sys.exit(1)
+        logger.warning("警告: 系统不支持 cgroups v2,无法使用 CPU 限制功能")
+        logger.warning("系统将以监控模式运行(仅采集指标,不限制CPU)")
+        is_managed_mode = False
+        return
 
     # 初始化 cgroup 管理器
     try:
@@ -367,8 +370,9 @@ def init_cgroup_management():
         logger.info("CPU 限制管理已启用")
 
     except Exception as e:
-        logger.error(f"初始化 cgroup 失败: {e}", exc_info=True)
-        sys.exit(1)
+        logger.warning(f"初始化 cgroup 失败: {e}")
+        logger.warning("系统将以监控模式运行(仅采集指标,不限制CPU)")
+        is_managed_mode = False
 
 
 if __name__ == "__main__":

@@ -19,6 +19,9 @@ class SystemConfigUpdate(BaseModel):
     avg_load_limit_percent: float
     history_retention_days: int
     metrics_interval_seconds: int
+    safety_factor: float
+    startup_safety_factor: float
+    startup_data_threshold_percent: float
 
 
 class TimeSlotCreate(BaseModel):
@@ -67,6 +70,15 @@ async def update_system_config(
 
     if config_update.avg_load_limit_percent < 0 or config_update.avg_load_limit_percent > 100:
         raise HTTPException(status_code=400, detail="avg_load_limit_percent 必须在 0-100 之间")
+
+    if config_update.safety_factor < 0.5 or config_update.safety_factor > 1.0:
+        raise HTTPException(status_code=400, detail="safety_factor 必须在 0.5-1.0 之间")
+
+    if config_update.startup_safety_factor < 0.5 or config_update.startup_safety_factor > 1.0:
+        raise HTTPException(status_code=400, detail="startup_safety_factor 必须在 0.5-1.0 之间")
+
+    if config_update.startup_data_threshold_percent < 1 or config_update.startup_data_threshold_percent > 50:
+        raise HTTPException(status_code=400, detail="startup_data_threshold_percent 必须在 1-50 之间")
 
     # 更新配置
     config.update_batch(config_update.dict())

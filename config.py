@@ -52,7 +52,7 @@ class ConfigManager:
 
     @property
     def avg_load_limit_percent(self) -> float:
-        return float(self.get("avg_load_limit_percent", 50.0))
+        return float(self.get("avg_load_limit_percent", 28.0))
 
     @property
     def history_retention_days(self) -> int:
@@ -60,4 +60,19 @@ class ConfigManager:
 
     @property
     def metrics_interval_seconds(self) -> int:
-        return int(self.get("metrics_interval_seconds", 30))
+        return int(self.get("metrics_interval_seconds", 15))
+
+    @property
+    def safety_factor(self) -> float:
+        """安全系数,用于计算CPU限制(0-1之间,越小越保守)"""
+        return float(self.get("safety_factor", 0.85))
+
+    @property
+    def startup_safety_factor(self) -> float:
+        """启动初期安全系数(数据不足时使用)"""
+        return float(self.get("startup_safety_factor", 0.7))
+
+    @property
+    def startup_data_threshold_percent(self) -> float:
+        """启动初期数据阈值(占窗口时长的百分比,低于此值使用启动安全系数)"""
+        return float(self.get("startup_data_threshold_percent", 10.0))

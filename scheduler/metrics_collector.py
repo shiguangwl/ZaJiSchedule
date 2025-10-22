@@ -15,6 +15,8 @@ class MetricsCollector:
         self._last_net_io = psutil.net_io_counters()
         self._last_disk_io = psutil.disk_io_counters()
         self._last_time = time.time()
+        # 初始化 CPU 百分比计数器(第一次调用返回0)
+        psutil.cpu_percent(interval=None)
 
     def collect(self) -> dict[str, float]:
         """
@@ -26,8 +28,8 @@ class MetricsCollector:
         current_time = time.time()
         time_delta = current_time - self._last_time
 
-        # CPU 使用率 (interval=1 表示采样 1 秒)
-        cpu_percent = psutil.cpu_percent(interval=1)
+        # CPU 使用率 (使用 interval=None 获取自上次调用以来的平均值,避免阻塞)
+        cpu_percent = psutil.cpu_percent(interval=None)
 
         # 内存使用情况
         memory = psutil.virtual_memory()

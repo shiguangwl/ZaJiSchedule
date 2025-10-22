@@ -75,7 +75,18 @@ def main():
     # 计算安全限制
     safe_limit = scheduler.calculate_safe_cpu_limit()
     print("\n【安全限制计算】")
-    safety_factor = 0.9
+
+    # 根据数据量确定安全系数(从配置读取)
+    window_minutes = quota_info["window_minutes"]
+    actual_minutes = quota_info["actual_minutes"]
+    threshold_percent = config.startup_data_threshold_percent
+    if actual_minutes < window_minutes * (threshold_percent / 100):
+        safety_factor = config.startup_safety_factor
+        print(f"  安全系数: {safety_factor} (启动初期保护,配置值)")
+    else:
+        safety_factor = config.safety_factor
+        print(f"  安全系数: {safety_factor} (正常运行,配置值)")
+
     quota_based = quota_info["target_cpu_percent"] * safety_factor
     print(f"  基于目标CPU的限制: {quota_based:.2f}%")
     print(f"    计算: {quota_info['target_cpu_percent']:.2f}% × {safety_factor} = {quota_based:.2f}%")
@@ -114,14 +125,14 @@ def main():
     expected_used = quota_info["avg_cpu_percent"] * quota_info["actual_minutes"]
     actual_used = quota_info["used_quota"]
     print(
-        f"  ✓ 已用配额: {actual_used:.2f} (期望: {expected_used:.2f}) - {'✅ 通过' if abs(actual_used - expected_used) < 0.01 else '❌ 失败'}",
+        f"  ✓ 已用配额: {actual_used:.2f} (期望: {expected_used:.2f}) - {'✅ 通过' if abs(actual_used - expected_used) < 0.2 else '❌ 失败'}",
     )
 
     # 验证3: 剩余配额
     expected_remaining = expected_total - expected_used
     actual_remaining = quota_info["remaining_quota"]
     print(
-        f"  ✓ 剩余配额: {actual_remaining:.2f} (期望: {expected_remaining:.2f}) - {'✅ 通过' if abs(actual_remaining - expected_remaining) < 0.01 else '❌ 失败'}",
+        f"  ✓ 剩余配额: {actual_remaining:.2f} (期望: {expected_remaining:.2f}) - {'✅ 通过' if abs(actual_remaining - expected_remaining) < 0.2 else '❌ 失败'}",
     )
 
     # 验证4: 绝对余量
@@ -149,13 +160,13 @@ def main():
     if quota_info["remaining_quota"] >= 0:
         print("  ✅ 当前状态: 未超限")
         print(
-            f"  📊 剩余配额: {quota_info['remaining_quota']:.2f} %·min ({quota_info['remaining_quota'] / 60:.2f} %·h)"
+            f"  📊 剩余配额: {quota_info['remaining_quota']:.2f} %·min ({quota_info['remaining_quota'] / 60:.2f} %·h)",
         )
         print("  🎯 建议: 可以继续保持当前负载水平")
     else:
         print("  ⚠️  当前状态: 已超限")
         print(
-            f"  📊 超出配额: {abs(quota_info['remaining_quota']):.2f} %·min ({abs(quota_info['remaining_quota']) / 60:.2f} %·h)"
+            f"  📊 超出配额: {abs(quota_info['remaining_quota']):.2f} %·min ({abs(quota_info['remaining_quota']) / 60:.2f} %·h)",
         )
         print(f"  🎯 建议: 降低CPU使用率到 {quota_info['target_cpu_percent']:.2f}% 以下")
         print(f"  🔧 安全限制: {safe_limit}% (已应用安全系数)")

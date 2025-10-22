@@ -31,7 +31,7 @@
                             <small class="text-muted">任何时刻的 CPU 负载上限</small>
                         </div>
                     </div>
-                    
+
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">滚动窗口大小 (小时)</label>
@@ -44,7 +44,7 @@
                             <small class="text-muted">滚动窗口内允许的平均 CPU 使用率上限</small>
                         </div>
                     </div>
-                    
+
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">历史数据保留时长 (天)</label>
@@ -57,10 +57,34 @@
                             <small class="text-muted">性能指标采集的时间间隔</small>
                         </div>
                     </div>
-                    
+
+                    <hr class="my-4">
+                    <h5 class="mb-3"><i class="fas fa-shield-alt"></i> 高级安全参数</h5>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">安全系数</label>
+                            <input type="number" class="form-control" id="safetyFactor" min="0.5" max="1.0" step="0.01" required>
+                            <small class="text-muted">正常运行时的安全系数(0.5-1.0,越小越保守)</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">启动安全系数</label>
+                            <input type="number" class="form-control" id="startupSafetyFactor" min="0.5" max="1.0" step="0.01" required>
+                            <small class="text-muted">启动初期的安全系数(数据不足时使用)</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">启动数据阈值 (%)</label>
+                            <input type="number" class="form-control" id="startupDataThresholdPercent" min="1" max="50" step="0.1" required>
+                            <small class="text-muted">低于此值(占窗口百分比)时使用启动安全系数</small>
+                        </div>
+                    </div>
+
                     <div class="alert alert-success d-none" id="configSuccessAlert">配置更新成功!</div>
                     <div class="alert alert-danger d-none" id="configErrorAlert"></div>
-                    
+
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-save"></i> 保存配置
                     </button>
@@ -139,4 +163,3 @@
 {% block extra_js %}
 <script src="/static/js/config.js"></script>
 {% endblock %}
-
