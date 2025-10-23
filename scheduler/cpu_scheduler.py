@@ -124,6 +124,12 @@ class CPUScheduler:
         """
         计算当前安全的 CPU 使用上限（基于滑动窗口）
 
+        策略：预留最低负载配额，剩余部分动态分配
+        - 总配额 = avg_limit × window_hours
+        - 预留配额 = min_load × window_hours（保证最低负载）
+        - 动态配额 = 总配额 - 预留配额
+        - safe_limit = min_load + 动态部分
+
         Returns:
             建议的 CPU 使用上限(百分比)
         """
@@ -139,20 +145,31 @@ class CPUScheduler:
 
         min_load = self.config.min_load_percent
         max_load = self.config.max_load_percent
+        avg_limit = self.config.avg_load_limit_percent
+        window_hours = self.config.rolling_window_hours
 
-        # 获取剩余配额信息
+        # 获取配额信息
         quota_info = self.calculate_remaining_quota()
-        remaining_quota = quota_info["remaining_quota"]  # 单位: 百分比·分钟
-        target_cpu = quota_info["target_cpu_percent"]  # 目标 CPU 使用率
         avg_cpu = quota_info["avg_cpu_percent"]  # 当前平均 CPU
-
-        # 计算基于剩余配额的安全上限
-        # 从配置中获取安全系数
-        safety_factor = self.config.safety_factor
-
-        # 启动初期保护: 如果数据不足窗口时长的阈值,使用更保守的安全系数
-        window_minutes = self.config.rolling_window_hours * 60
         actual_minutes = quota_info["actual_minutes"]
+        window_minutes = quota_info["window_minutes"]
+
+        # 配额规划（单位：百分比·分钟）
+        total_quota = avg_limit * window_minutes  # 总配额
+        reserved_quota = min_load * window_minutes  # 预留最低负载配额
+        dynamic_quota = total_quota - reserved_quota  # 动态可分配配额
+
+        # 计算已用配额
+        used_total = avg_cpu * actual_minutes  # 已用总配额
+        used_reserved = min_load * actual_minutes  # 已用预留配额
+        used_dynamic = max(0, used_total - used_reserved)  # 已用动态配额
+
+        # 计算剩余配额
+        remaining_dynamic = dynamic_quota - used_dynamic  # 剩余动态配额
+        remaining_minutes = max(0, window_minutes - actual_minutes)  # 剩余时间
+
+        # 选择安全系数
+        safety_factor = self.config.safety_factor
         threshold_percent = self.config.startup_data_threshold_percent
         if actual_minutes < window_minutes * (threshold_percent / 100):
             safety_factor = self.config.startup_safety_factor
@@ -161,28 +178,30 @@ class CPUScheduler:
                 f"使用启动安全系数 {safety_factor}",
             )
 
-        # 如果剩余配额为正，使用目标CPU作为基准
-        # 如果剩余配额为负，需要更保守的策略
-        if remaining_quota >= 0:
-            # 未超限：使用目标CPU × 安全系数
-            quota_based_limit = target_cpu * safety_factor
+        # 计算动态部分的限制
+        if remaining_minutes > 0:
+            dynamic_limit = (remaining_dynamic / remaining_minutes) * safety_factor
         else:
-            # 已超限：需要降低到目标CPU以下
-            # 目标是让滑动窗口的平均逐渐回到限制内
-            quota_based_limit = target_cpu * safety_factor
+            dynamic_limit = 0
 
-        # 检查时间段配置,预留配额
+        # 检查时间段配置,从动态部分中扣除预留
         time_slot_reserved = self._calculate_time_slot_reservation()
-        quota_based_limit -= time_slot_reserved
+        dynamic_limit = max(0, dynamic_limit - time_slot_reserved)
 
-        # 限制在 min_load 和 max_load 之间
-        safe_limit = max(min_load, min(max_load, quota_based_limit))
+        # 最终的safe_limit = 最低负载 + 动态部分
+        safe_limit = min_load + max(0, dynamic_limit)
+
+        # 限制在 max_load 之内（不使用min_load作为下限，因为已经包含在计算中）
+        safe_limit = min(max_load, safe_limit)
 
         logger.info(
             f"计算安全 CPU 限制: avg_cpu={avg_cpu:.2f}%, "
-            f"remaining_quota={remaining_quota:.2f}%·min, "
-            f"target_cpu={target_cpu:.2f}%, "
-            f"quota_based={quota_based_limit:.2f}%, "
+            f"total_quota={total_quota:.2f}%·min, "
+            f"reserved_quota={reserved_quota:.2f}%·min, "
+            f"dynamic_quota={dynamic_quota:.2f}%·min, "
+            f"used_dynamic={used_dynamic:.2f}%·min, "
+            f"remaining_dynamic={remaining_dynamic:.2f}%·min, "
+            f"dynamic_limit={dynamic_limit:.2f}%, "
             f"time_slot_reserved={time_slot_reserved:.2f}%, "
             f"final={safe_limit:.2f}%",
         )
@@ -254,9 +273,19 @@ class CPUScheduler:
         current_cpu = psutil.cpu_percent(interval=None)
 
         # 计算距离限制的余量
+        # margin_absolute = 当前可用的安全CPU限制 - 当前瞬时CPU
+        # 这表示：当前CPU距离安全限制还有多少余量
+        margin_absolute = safe_limit - current_cpu
         avg_limit = self.config.avg_load_limit_percent
-        margin_absolute = avg_limit - avg_cpu  # 绝对余量 (百分比)
-        margin_percent = (margin_absolute / avg_limit * 100) if avg_limit > 0 else 0  # 相对余量 (%)
+
+        # 相对余量：margin占安全限制的百分比
+        margin_percent = (margin_absolute / safe_limit * 100) if safe_limit > 0 else 0
+
+        # 检测是否处于启动初期（用于前端显示）
+        window_minutes = self.config.rolling_window_hours * 60
+        actual_minutes = quota_info["actual_minutes"]
+        threshold_percent = self.config.startup_data_threshold_percent
+        is_startup_period = actual_minutes < window_minutes * (threshold_percent / 100)
 
         # 负载等级评估（基于相对余量）
         if margin_percent > 30:
@@ -278,6 +307,7 @@ class CPUScheduler:
             "safe_cpu_limit": safe_limit,
             "data_points": data_points,
             "quota_info": quota_info,
+            "is_startup_period": is_startup_period,  # 是否处于启动初期
             "config": {
                 "min_load": self.config.min_load_percent,
                 "max_load": self.config.max_load_percent,

@@ -90,6 +90,34 @@ class Database:
                 )
             """)
 
+            # 调度记录表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS scheduler_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp DATETIME NOT NULL,
+                    log_type TEXT NOT NULL,
+                    level TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    details TEXT,
+                    cpu_limit_before REAL,
+                    cpu_limit_after REAL,
+                    current_cpu REAL,
+                    avg_cpu REAL,
+                    safe_limit REAL
+                )
+            """)
+
+            # 为 timestamp 和 log_type 创建索引
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_scheduler_logs_timestamp
+                ON scheduler_logs(timestamp)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_scheduler_logs_type
+                ON scheduler_logs(log_type)
+            """)
+
             # 插入默认配置
             self._insert_default_config(cursor)
 
@@ -345,3 +373,136 @@ class Database:
 
             row = cursor.fetchone()
             return dict(row) if row else None
+
+    # ==================== 调度记录相关方法 ====================
+
+    def insert_scheduler_log(
+        self,
+        log_type: str,
+        level: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+        cpu_limit_before: float | None = None,
+        cpu_limit_after: float | None = None,
+        current_cpu: float | None = None,
+        avg_cpu: float | None = None,
+        safe_limit: float | None = None,
+    ):
+        """插入调度记录"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO scheduler_logs (
+                    timestamp, log_type, level, message, details,
+                    cpu_limit_before, cpu_limit_after, current_cpu, avg_cpu, safe_limit
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    datetime.now().isoformat(),
+                    log_type,
+                    level,
+                    message,
+                    json.dumps(details) if details else None,
+                    cpu_limit_before,
+                    cpu_limit_after,
+                    current_cpu,
+                    avg_cpu,
+                    safe_limit,
+                ),
+            )
+
+    def get_scheduler_logs(
+        self,
+        log_type: str | None = None,
+        level: str | None = None,
+        hours: int = 24,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """获取调度记录"""
+        start_time = datetime.now() - timedelta(hours=hours)
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            query = """
+                SELECT * FROM scheduler_logs
+                WHERE timestamp >= ?
+            """
+            params = [start_time.isoformat()]
+
+            if log_type:
+                query += " AND log_type = ?"
+                params.append(log_type)
+
+            if level:
+                query += " AND level = ?"
+                params.append(level)
+
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(str(limit))
+
+            cursor.execute(query, params)
+
+            logs = []
+            for row in cursor.fetchall():
+                log = dict(row)
+                if log["details"]:
+                    log["details"] = json.loads(log["details"])
+                logs.append(log)
+
+            return logs
+
+    def get_scheduler_logs_by_range(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        log_type: str | None = None,
+        level: str | None = None,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """按时间范围查询调度记录"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            query = """
+                SELECT * FROM scheduler_logs
+                WHERE timestamp BETWEEN ? AND ?
+            """
+            params = [start_time.isoformat(), end_time.isoformat()]
+
+            if log_type:
+                query += " AND log_type = ?"
+                params.append(log_type)
+
+            if level:
+                query += " AND level = ?"
+                params.append(level)
+
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(str(limit))
+
+            cursor.execute(query, params)
+
+            logs = []
+            for row in cursor.fetchall():
+                log = dict(row)
+                if log["details"]:
+                    log["details"] = json.loads(log["details"])
+                logs.append(log)
+
+            return logs
+
+    def cleanup_old_scheduler_logs(self, retention_days: int):
+        """清理过期的调度记录"""
+        cutoff_time = datetime.now() - timedelta(days=retention_days)
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                DELETE FROM scheduler_logs
+                WHERE timestamp < ?
+            """,
+                (cutoff_time.isoformat(),),
+            )

@@ -4,59 +4,59 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}CPU 智能调度与性能监控系统{% endblock %}</title>
-    
+
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    
+
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    
+
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #f8f9fa;
         }
-        
+
         .navbar {
             box-shadow: 0 2px 4px rgba(0,0,0,.1);
         }
-        
+
         .card {
             border: none;
             box-shadow: 0 0 10px rgba(0,0,0,.1);
             margin-bottom: 20px;
         }
-        
+
         .metric-card {
             text-align: center;
             padding: 20px;
         }
-        
+
         .metric-value {
             font-size: 2.5rem;
             font-weight: bold;
             margin: 10px 0;
         }
-        
+
         .metric-label {
             color: #6c757d;
             font-size: 0.9rem;
         }
-        
+
         .risk-low { color: #28a745; }
         .risk-medium { color: #ffc107; }
         .risk-high { color: #fd7e14; }
         .risk-critical { color: #dc3545; }
-        
+
         .chart-container {
             position: relative;
             height: 300px;
         }
     </style>
-    
+
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -82,6 +82,11 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="/scheduler-logs">
+                            <i class="fas fa-list-alt"></i> 调度记录
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="/history">
                             <i class="fas fa-history"></i> 历史数据
                         </a>
@@ -98,83 +103,82 @@
         </div>
     </nav>
     {% endblock %}
-    
+
     <div class="container-fluid mt-4">
         {% block content %}{% endblock %}
     </div>
-    
+
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    
+
     <script>
         // 通用工具函数
         function getToken() {
             return localStorage.getItem('access_token');
         }
-        
+
         function setToken(token) {
             localStorage.setItem('access_token', token);
         }
-        
+
         function clearToken() {
             localStorage.removeItem('access_token');
         }
-        
+
         function logout() {
             clearToken();
             window.location.href = '/login';
         }
-        
+
         async function apiRequest(url, options = {}) {
             const token = getToken();
-            
+
             if (!token && !url.includes('/api/auth/login')) {
                 window.location.href = '/login';
                 return;
             }
-            
+
             const headers = {
                 'Content-Type': 'application/json',
                 ...options.headers
             };
-            
+
             if (token) {
                 headers['Authorization'] = `Bearer ${token}`;
             }
-            
+
             const response = await fetch(url, {
                 ...options,
                 headers
             });
-            
+
             if (response.status === 401) {
                 clearToken();
                 window.location.href = '/login';
                 return;
             }
-            
+
             return response;
         }
-        
+
         // 检查登录状态
         function checkAuth() {
             const token = getToken();
             const currentPath = window.location.pathname;
-            
+
             if (!token && currentPath !== '/login') {
                 window.location.href = '/login';
             } else if (token && currentPath === '/login') {
                 window.location.href = '/dashboard';
             }
         }
-        
+
         // 页面加载时检查认证
         if (window.location.pathname !== '/login') {
             checkAuth();
         }
     </script>
-    
+
     {% block extra_js %}{% endblock %}
 </body>
 </html>
-

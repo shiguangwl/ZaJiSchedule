@@ -104,10 +104,17 @@ async function updateDashboard() {
                 // 距离限制状态指示
                 const marginStatus = document.getElementById('marginStatus');
                 const marginAbsolute = status.margin_absolute;
-                if (marginAbsolute < 0) {
+                const safeCpuLimit = status.safe_cpu_limit;
+                const isStartupPeriod = status.is_startup_period || false;
+
+                if (isStartupPeriod && marginAbsolute > 0) {
+                    // 启动初期且有余量：显示启动中状态
+                    marginStatus.textContent = '启动中';
+                    marginStatus.className = 'badge ms-1 bg-info';
+                } else if (marginAbsolute < 0) {
                     marginStatus.textContent = '已超限';
                     marginStatus.className = 'badge ms-1 bg-danger';
-                } else if (marginAbsolute < avgLimit * 0.1) {
+                } else if (marginAbsolute < safeCpuLimit * 0.1) {
                     marginStatus.textContent = '接近限制';
                     marginStatus.className = 'badge ms-1 bg-warning';
                 } else {
@@ -132,7 +139,20 @@ async function updateDashboard() {
                 const statusExplanation = document.getElementById('statusExplanation');
                 const statusText = document.getElementById('statusText');
 
-                if (remainingQuotaMin < 0) {
+                if (isStartupPeriod && remainingQuotaMin > 0) {
+                    // 启动初期且配额充足：显示启动提示
+                    statusExplanation.style.display = 'block';
+                    statusExplanation.className = 'alert alert-sm mt-3 alert-info';
+                    const actualMinutes = status.quota_info.actual_minutes;
+                    const windowMinutes = status.quota_info.window_minutes;
+                    const dataPercent = (actualMinutes / windowMinutes * 100).toFixed(1);
+                    statusText.innerHTML = `
+                        <strong>当前状态：启动初期</strong><br>
+                        • 数据采集中：已运行 ${actualMinutes.toFixed(0)} 分钟 (${dataPercent}% 窗口)<br>
+                        • 剩余配额：${remainingQuotaHour.toFixed(1)} %·h (充足)<br>
+                        • 说明：启动阶段数据较少，指标仅供参考
+                    `;
+                } else if (remainingQuotaMin < 0) {
                     statusExplanation.style.display = 'block';
                     statusExplanation.className = 'alert alert-sm mt-3 alert-danger';
                     const overUsageHour = Math.abs(remainingQuotaHour);
@@ -143,22 +163,24 @@ async function updateDashboard() {
                         • 超出配额：${overUsageHour.toFixed(1)} %·h<br>
                         • 建议：降低CPU使用率 ${needReduce.toFixed(2)}% (从 ${avgCpu.toFixed(2)}% 降至 ${targetCpu.toFixed(2)}%)
                     `;
-                } else if (marginAbsolute < avgLimit * 0.1) {
+                } else if (marginAbsolute < safeCpuLimit * 0.1) {
                     statusExplanation.style.display = 'block';
                     statusExplanation.className = 'alert alert-sm mt-3 alert-warning';
+                    const currentCpu = status.current_cpu_percent;
                     statusText.innerHTML = `
                         <strong>当前状态：接近限制</strong><br>
-                        • 24小时平均CPU (${avgCpu.toFixed(2)}%) 接近限制 (${avgLimit}%)<br>
-                        • 剩余配额：${remainingQuotaHour.toFixed(1)} %·h<br>
+                        • 当前CPU (${currentCpu.toFixed(2)}%) 接近安全限制 (${safeCpuLimit.toFixed(2)}%)<br>
+                        • 距离限制：${marginAbsolute.toFixed(2)}%<br>
                         • 建议：注意控制CPU使用，避免超限
                     `;
                 } else {
                     statusExplanation.style.display = 'block';
                     statusExplanation.className = 'alert alert-sm mt-3 alert-success';
+                    const currentCpu = status.current_cpu_percent;
                     statusText.innerHTML = `
                         <strong>当前状态：正常</strong><br>
-                        • 24小时平均CPU (${avgCpu.toFixed(2)}%) 在限制内 (${avgLimit}%)<br>
-                        • 剩余配额：${remainingQuotaHour.toFixed(1)} %·h<br>
+                        • 当前CPU (${currentCpu.toFixed(2)}%) 在安全限制内 (${safeCpuLimit.toFixed(2)}%)<br>
+                        • 距离限制：${marginAbsolute.toFixed(2)}%<br>
                         • 可以继续保持当前负载水平
                     `;
                 }

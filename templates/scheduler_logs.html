@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+
+{% block title %}调度记录 - CPU 智能调度系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="fas fa-list-alt"></i> 调度记录</h2>
+        <hr>
+    </div>
+</div>
+
+<!-- 统计卡片 -->
+<div class="row" id="statsCards">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted">总记录数</h6>
+                <h3 id="totalLogs">--</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted">CPU限制调整</h6>
+                <h3 id="adjustCount">--</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted">告警次数</h6>
+                <h3 id="alertCount" class="text-warning">--</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted">错误次数</h6>
+                <h3 id="errorCount" class="text-danger">--</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 筛选器 -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-filter"></i> 筛选条件
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <label>日志类型</label>
+                        <select class="form-select" id="logTypeFilter">
+                            <option value="">全部</option>
+                            <option value="system">系统</option>
+                            <option value="cpu_limit_adjust">CPU限制调整</option>
+                            <option value="alert">告警</option>
+                            <option value="process_sync">进程同步</option>
+                            <option value="error">错误</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label>日志级别</label>
+                        <select class="form-select" id="levelFilter">
+                            <option value="">全部</option>
+                            <option value="info">信息</option>
+                            <option value="warning">警告</option>
+                            <option value="error">错误</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label>时间范围</label>
+                        <select class="form-select" id="hoursFilter">
+                            <option value="1">最近1小时</option>
+                            <option value="6">最近6小时</option>
+                            <option value="24" selected>最近24小时</option>
+                            <option value="72">最近3天</option>
+                            <option value="168">最近7天</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label>&nbsp;</label>
+                        <button class="btn btn-primary w-100" onclick="loadLogs()">
+                            <i class="fas fa-search"></i> 查询
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 日志列表 -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-list"></i> 日志列表</span>
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadLogs()">
+                    <i class="fas fa-sync-alt"></i> 刷新
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>类型</th>
+                                <th>级别</th>
+                                <th>消息</th>
+                                <th>CPU限制</th>
+                                <th>当前CPU</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logsTableBody">
+                            <tr>
+                                <td colspan="7" class="text-center">加载中...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 详情模态框 -->
+<div class="modal fade" id="logDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">日志详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="logDetailContent"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentLogs = [];
+
+// 加载统计信息
+async function loadStats() {
+    try {
+        const hours = document.getElementById('hoursFilter').value;
+        const response = await fetch(`/api/scheduler-logs/stats?hours=${hours}`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+            }
+        });
+
+        if (response.ok) {
+            const stats = await response.json();
+            document.getElementById('totalLogs').textContent = stats.total_logs;
+            document.getElementById('adjustCount').textContent = stats.type_counts.cpu_limit_adjust || 0;
+            document.getElementById('alertCount').textContent = stats.alert_count;
+            document.getElementById('errorCount').textContent = stats.error_count;
+        }
+    } catch (error) {
+        console.error('加载统计信息失败:', error);
+    }
+}
+
+// 加载日志列表
+async function loadLogs() {
+    try {
+        const logType = document.getElementById('logTypeFilter').value;
+        const level = document.getElementById('levelFilter').value;
+        const hours = document.getElementById('hoursFilter').value;
+
+        let url = `/api/scheduler-logs?hours=${hours}&limit=500`;
+        if (logType) url += `&log_type=${logType}`;
+        if (level) url += `&level=${level}`;
+
+        const response = await fetch(url, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+            }
+        });
+
+        if (response.ok) {
+            currentLogs = await response.json();
+            renderLogs(currentLogs);
+            loadStats();
+        } else {
+            showError('加载日志失败');
+        }
+    } catch (error) {
+        console.error('加载日志失败:', error);
+        showError('加载日志失败: ' + error.message);
+    }
+}
+
+// 渲染日志列表
+function renderLogs(logs) {
+    const tbody = document.getElementById('logsTableBody');
+
+    if (logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center">暂无数据</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = logs.map(log => {
+        const time = new Date(log.timestamp).toLocaleString('zh-CN');
+        const typeLabel = getTypeLabel(log.log_type);
+        const levelBadge = getLevelBadge(log.level);
+
+        let cpuLimit = '--';
+        if (log.cpu_limit_before && log.cpu_limit_after) {
+            cpuLimit = `${log.cpu_limit_before.toFixed(1)}% → ${log.cpu_limit_after.toFixed(1)}%`;
+        } else if (log.cpu_limit_after) {
+            cpuLimit = `${log.cpu_limit_after.toFixed(1)}%`;
+        }
+
+        const currentCpu = log.current_cpu ? `${log.current_cpu.toFixed(1)}%` : '--';
+
+        return `
+            <tr>
+                <td>${time}</td>
+                <td>${typeLabel}</td>
+                <td>${levelBadge}</td>
+                <td>${log.message}</td>
+                <td>${cpuLimit}</td>
+                <td>${currentCpu}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary" onclick="showLogDetail(${log.id})">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// 获取类型标签
+function getTypeLabel(type) {
+    const labels = {
+        'system': '<span class="badge bg-secondary">系统</span>',
+        'cpu_limit_adjust': '<span class="badge bg-primary">CPU限制调整</span>',
+        'alert': '<span class="badge bg-warning">告警</span>',
+        'process_sync': '<span class="badge bg-info">进程同步</span>',
+        'error': '<span class="badge bg-danger">错误</span>'
+    };
+    return labels[type] || type;
+}
+
+// 获取级别徽章
+function getLevelBadge(level) {
+    const badges = {
+        'info': '<span class="badge bg-success">信息</span>',
+        'warning': '<span class="badge bg-warning">警告</span>',
+        'error': '<span class="badge bg-danger">错误</span>'
+    };
+    return badges[level] || level;
+}
+
+// 显示日志详情
+function showLogDetail(logId) {
+    const log = currentLogs.find(l => l.id === logId);
+    if (!log) return;
+
+    const content = document.getElementById('logDetailContent');
+    content.innerHTML = `
+        <table class="table">
+            <tr><th>时间</th><td>${new Date(log.timestamp).toLocaleString('zh-CN')}</td></tr>
+            <tr><th>类型</th><td>${getTypeLabel(log.log_type)}</td></tr>
+            <tr><th>级别</th><td>${getLevelBadge(log.level)}</td></tr>
+            <tr><th>消息</th><td>${log.message}</td></tr>
+            ${log.cpu_limit_before ? `<tr><th>调整前限制</th><td>${log.cpu_limit_before.toFixed(2)}%</td></tr>` : ''}
+            ${log.cpu_limit_after ? `<tr><th>调整后限制</th><td>${log.cpu_limit_after.toFixed(2)}%</td></tr>` : ''}
+            ${log.current_cpu ? `<tr><th>当前CPU</th><td>${log.current_cpu.toFixed(2)}%</td></tr>` : ''}
+            ${log.avg_cpu ? `<tr><th>平均CPU</th><td>${log.avg_cpu.toFixed(2)}%</td></tr>` : ''}
+            ${log.safe_limit ? `<tr><th>安全限制</th><td>${log.safe_limit.toFixed(2)}%</td></tr>` : ''}
+            ${log.details ? `<tr><th>详细信息</th><td><pre>${JSON.stringify(log.details, null, 2)}</pre></td></tr>` : ''}
+        </table>
+    `;
+
+    new bootstrap.Modal(document.getElementById('logDetailModal')).show();
+}
+
+// 显示错误
+function showError(message) {
+    const tbody = document.getElementById('logsTableBody');
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">${message}</td></tr>`;
+}
+
+// 页面加载时初始化
+document.addEventListener('DOMContentLoaded', function() {
+    loadLogs();
+
+    // 自动刷新(每30秒)
+    setInterval(loadLogs, 30000);
+});
+</script>
+{% endblock %}
+

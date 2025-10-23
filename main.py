@@ -22,12 +22,13 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import psutil
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from api import auth_api, config_api, dashboard
+from api import auth_api, config_api, dashboard, scheduler_logs_api
 from config import ConfigManager
 from database import Database
 from scheduler.cpu_scheduler import CPUScheduler
@@ -83,25 +84,219 @@ class CGroupManager:
             logger.error(f"设置 cgroup 失败: {e}")
             raise
 
+    def add_process(self, pid: int) -> bool:
+        """
+        添加进程到 cgroup
+
+        Args:
+            pid: 进程 ID
+
+        Returns:
+            是否成功添加
+        """
+        try:
+            self.procs_file.write_text(str(pid))
+            return True
+        except Exception as e:
+            # 进程可能已经退出，这是正常情况
+            logger.debug(f"无法添加进程 {pid} 到 cgroup: {e}")
+            return False
+
+    def add_current_process(self) -> None:
+        """添加当前进程到 cgroup"""
+        current_pid = os.getpid()
+        if self.add_process(current_pid):
+            logger.info(f"已将当前进程 (PID: {current_pid}) 添加到 cgroup")
+        else:
+            logger.warning(f"无法将当前进程 (PID: {current_pid}) 添加到 cgroup")
+
+    def get_all_child_processes(self, parent_pid: int) -> list[int]:
+        """
+        递归获取所有子进程
+
+        Args:
+            parent_pid: 父进程 ID
+
+        Returns:
+            所有子进程的 PID 列表（包括子进程的子进程）
+        """
+        try:
+            parent = psutil.Process(parent_pid)
+            children = parent.children(recursive=True)
+            return [child.pid for child in children]
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return []
+
+    def get_managed_processes(self) -> list[int]:
+        """
+        获取当前 cgroup 中管理的所有进程
+
+        Returns:
+            进程 PID 列表
+        """
+        try:
+            if not self.procs_file.exists():
+                return []
+
+            procs_text = self.procs_file.read_text().strip()
+            if not procs_text:
+                return []
+
+            return [int(pid) for pid in procs_text.split("\n") if pid]
+        except Exception as e:
+            logger.error(f"读取 cgroup 进程列表失败: {e}")
+            return []
+
+    def sync_processes(self) -> dict[str, int]:
+        """
+        同步进程到 cgroup（添加当前进程及其所有子进程）
+
+        Returns:
+            同步统计信息
+            - total: 总共尝试添加的进程数
+            - added: 成功添加的进程数
+            - failed: 添加失败的进程数
+        """
+        current_pid = os.getpid()
+        all_pids = [current_pid] + self.get_all_child_processes(current_pid)
+
+        stats = {"total": len(all_pids), "added": 0, "failed": 0}
+
+        for pid in all_pids:
+            if self.add_process(pid):
+                stats["added"] += 1
+            else:
+                stats["failed"] += 1
+
+        logger.debug(
+            f"进程同步完成: 总计 {stats['total']}, 成功 {stats['added']}, 失败 {stats['failed']}",
+        )
+
+        return stats
+
+    def sync_all_processes(self) -> dict[str, int]:
+        """
+        同步所有用户进程到 cgroup(排除系统关键进程)
+
+        Returns:
+            同步统计信息
+            - total: 扫描的总进程数
+            - added: 成功添加的进程数
+            - skipped: 跳过的进程数
+            - failed: 添加失败的进程数
+        """
+        # 系统关键进程列表(不应被限制)
+        system_process_names = {
+            # "systemd",
+            "ssh",
+        }
+
+        stats = {"total": 0, "added": 0, "skipped": 0, "failed": 0}
+        current_pid = os.getpid()
+
+        try:
+            for proc in psutil.process_iter(["pid", "name", "username"]):
+                try:
+                    stats["total"] += 1
+                    pid = proc.info["pid"]
+                    name = proc.info["name"] or ""
+                    username = proc.info["username"] or ""
+
+                    # 跳过PID 1和2(init和kthreadd)
+                    if pid <= 2:
+                        stats["skipped"] += 1
+                        continue
+
+                    # 跳过系统进程
+                    is_system_process = False
+                    for sys_name in system_process_names:
+                        if sys_name in name.lower():
+                            is_system_process = True
+                            break
+
+                    if is_system_process:
+                        stats["skipped"] += 1
+                        continue
+
+                    # 跳过root用户的系统服务(但保留当前进程)
+                    if username == "root" and pid != current_pid:
+                        # 检查是否是内核线程(没有cmdline)
+                        try:
+                            cmdline = proc.cmdline()
+                            if not cmdline:
+                                stats["skipped"] += 1
+                                continue
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            stats["skipped"] += 1
+                            continue
+
+                    # 尝试添加进程
+                    if self.add_process(pid):
+                        stats["added"] += 1
+                    else:
+                        stats["failed"] += 1
+
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    stats["failed"] += 1
+                    continue
+
+            logger.info(
+                f"全量进程同步: 扫描 {stats['total']}, 添加 {stats['added']}, "
+                f"跳过 {stats['skipped']}, 失败 {stats['failed']}",
+            )
+
+        except Exception as e:
+            logger.error(f"同步所有进程失败: {e}", exc_info=True)
+
+        return stats
+
     def set_cpu_limit(self, cpu_percent: float) -> None:
-        """设置 CPU 限制"""
+        """
+        设置 CPU 限制(归一化性能百分比)
+
+        Args:
+            cpu_percent: 归一化性能限制(0-100)
+                        例如: 30% 表示使用30%的总性能
+                        6核CPU: 30% → top显示180% (6×100%×0.3)
+                        10核CPU: 30% → top显示300% (10×100%×0.3)
+        """
         try:
             cpu_percent = max(0, min(100, cpu_percent))
+
+            # 获取CPU核心数
+            cpu_count = os.cpu_count() or 1
+
+            # cpu.max 格式: "quota period"
+            # quota: 每个周期内可用的 CPU 时间(微秒)
+            # period: 周期长度(微秒),通常是 100000 (100ms)
+            # 归一化性能 → top中的CPU%: cpu_percent × cpu_count
+            # cgroup配置: quota = (cpu_percent × cpu_count) × period / 100
             period = 100000
-            quota = int(cpu_percent * period / 100)
+            quota = int(cpu_percent * cpu_count * period / 100)
+
             self.cpu_max_file.write_text(f"{quota} {period}")
-            logger.info(f"设置 CPU 限制: {cpu_percent:.2f}%")
+            logger.info(
+                f"设置 CPU 限制: {cpu_percent:.2f}% 性能 (top显示最多 {cpu_percent * cpu_count:.1f}%, {cpu_count}核)",
+            )
         except Exception as e:
             logger.error(f"设置 CPU 限制失败: {e}")
 
     def get_current_limit(self) -> float:
-        """获取当前 CPU 限制"""
+        """
+        获取当前 CPU 限制(返回归一化性能百分比)
+
+        Returns:
+            归一化性能限制百分比
+        """
         try:
             cpu_max_value = self.cpu_max_file.read_text().strip()
             if cpu_max_value.startswith("max"):
                 return 100.0
             quota, period = map(int, cpu_max_value.split())
-            return (quota / period) * 100
+            cpu_count = os.cpu_count() or 1
+
+            # 计算归一化性能百分比: (quota / period / cpu_count) * 100
+            return (quota / period / cpu_count) * 100
         except Exception:
             return 0.0
 
@@ -132,26 +327,90 @@ async def monitor_and_adjust_cpu_limit():
     global background_task_running
 
     if not is_managed_mode or not cgroup_manager:
+        logger.info("CPU限制管理未启用,监控任务退出")
+        db.insert_scheduler_log(
+            log_type="system",
+            level="info",
+            message="CPU限制管理未启用,系统运行在监控模式",
+            details={"is_managed_mode": is_managed_mode, "has_cgroup_manager": cgroup_manager is not None},
+        )
         return
 
     logger.info("开始监控和调整 CPU 限制")
+    db.insert_scheduler_log(
+        log_type="system",
+        level="info",
+        message="CPU限制监控任务启动",
+    )
 
     try:
         while background_task_running:
             try:
                 # 获取调度器状态
                 status = cpu_scheduler.get_scheduler_status()
-                safe_limit = status["safe_cpu_limit"]
-                current_limit = cgroup_manager.get_current_limit()
+                safe_limit = status["safe_cpu_limit"]  # 归一化性能百分比
+                current_limit = cgroup_manager.get_current_limit()  # 归一化性能百分比
+                current_cpu_total = status["current_cpu_percent"]  # top中的CPU%(可能>100%)
+                avg_cpu_total = status["rolling_window_avg_cpu"]  # top中的平均CPU%
+
+                # 转换为归一化性能百分比
+                cpu_count = os.cpu_count() or 1
+                current_cpu = current_cpu_total / cpu_count  # 归一化性能
+                avg_cpu = avg_cpu_total / cpu_count  # 归一化性能
+
+                # 每次都同步所有进程(确保新启动的进程也被限制)
+                stats = cgroup_manager.sync_all_processes()
+                managed_count = stats["added"]
 
                 # 如果差异超过 5%，则调整
                 if abs(safe_limit - current_limit) > 5:
                     logger.info(
                         f"调整 CPU 限制: {current_limit:.2f}% → {safe_limit:.2f}% "
-                        f"(当前CPU: {status['current_cpu_percent']:.2f}%, "
-                        f"平均CPU: {status['rolling_window_avg_cpu']:.2f}%)",
+                        f"(当前CPU: {current_cpu:.2f}%, "
+                        f"平均CPU: {avg_cpu:.2f}%, "
+                        f"管理进程: {managed_count})",
                     )
+
+                    # 记录CPU限制调整
+                    db.insert_scheduler_log(
+                        log_type="cpu_limit_adjust",
+                        level="info",
+                        message=f"调整 CPU 限制: {current_limit:.2f}% → {safe_limit:.2f}%",
+                        details={
+                            "managed_processes": managed_count,
+                            "total_scanned": stats["total"],
+                            "skipped": stats["skipped"],
+                            "quota_info": status["quota_info"],
+                            "risk_level": status["risk_level"],
+                        },
+                        cpu_limit_before=current_limit,
+                        cpu_limit_after=safe_limit,
+                        current_cpu=current_cpu,
+                        avg_cpu=avg_cpu,
+                        safe_limit=safe_limit,
+                    )
+
                     cgroup_manager.set_cpu_limit(safe_limit)
+                # 即使不调整限制,也记录进程同步情况
+                elif managed_count > 0:
+                    logger.debug(f"进程同步: 新添加 {managed_count} 个进程到cgroup")
+
+                # 检查是否超限并记录告警
+                if current_cpu > safe_limit:
+                    margin = current_cpu - safe_limit
+                    db.insert_scheduler_log(
+                        log_type="alert",
+                        level="warning",
+                        message=f"当前CPU使用率 {current_cpu:.2f}% 超过安全限制 {safe_limit:.2f}%",
+                        details={
+                            "margin": margin,
+                            "quota_info": status["quota_info"],
+                            "risk_level": status["risk_level"],
+                        },
+                        current_cpu=current_cpu,
+                        avg_cpu=avg_cpu,
+                        safe_limit=safe_limit,
+                    )
 
                 # 与指标采集频率保持一致,避免基于相同数据重复调整
                 interval = config.metrics_interval_seconds
@@ -159,10 +418,21 @@ async def monitor_and_adjust_cpu_limit():
 
             except Exception as e:
                 logger.error(f"监控错误: {e}", exc_info=True)
+                db.insert_scheduler_log(
+                    log_type="error",
+                    level="error",
+                    message=f"监控任务错误: {e!s}",
+                    details={"error_type": type(e).__name__},
+                )
                 await asyncio.sleep(10)
 
     except asyncio.CancelledError:
         logger.info("监控任务已取消")
+        db.insert_scheduler_log(
+            log_type="system",
+            level="info",
+            message="CPU限制监控任务已取消",
+        )
         raise
 
 
@@ -216,6 +486,11 @@ async def cleanup_task():
                 db.cleanup_old_metrics(retention_days)
                 logger.info(f"清理了 {retention_days} 天前的历史数据")
 
+                # 清理过期的调度记录(保留30天)
+                scheduler_log_retention_days = 30
+                db.cleanup_old_scheduler_logs(scheduler_log_retention_days)
+                logger.info(f"清理了 {scheduler_log_retention_days} 天前的调度记录")
+
                 # 等待 24 小时
                 await asyncio.sleep(86400)
 
@@ -233,6 +508,9 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时
     logger.info("应用启动中...")
+
+    # 初始化 cgroup 管理(必须在启动时执行)
+    init_cgroup_management()
 
     # 启动后台任务
     metrics_task = asyncio.create_task(metrics_collection_task())
@@ -295,6 +573,7 @@ def get_config():
 app.include_router(auth_api.router)
 app.include_router(dashboard.router)
 app.include_router(config_api.router)
+app.include_router(scheduler_logs_api.router)
 
 
 # 页面路由
@@ -322,6 +601,12 @@ async def config_page(request: Request):
     return templates.TemplateResponse("config.html", {"request": request})
 
 
+@app.get("/scheduler-logs", response_class=HTMLResponse)
+async def scheduler_logs_page(request: Request):
+    """调度记录页面"""
+    return templates.TemplateResponse("scheduler_logs.html", {"request": request})
+
+
 @app.get("/history", response_class=HTMLResponse)
 async def history_page(request: Request):
     """历史数据查询页面"""
@@ -346,6 +631,12 @@ def init_cgroup_management():
     if os.geteuid() != 0:
         logger.warning("警告: 没有 root 权限,无法使用 cgroup CPU 限制功能")
         logger.warning("系统将以监控模式运行(仅采集指标,不限制CPU)")
+        db.insert_scheduler_log(
+            log_type="system",
+            level="warning",
+            message="没有root权限,CPU限制功能未启用",
+            details={"uid": os.geteuid()},
+        )
         is_managed_mode = False
         return
 
@@ -353,6 +644,11 @@ def init_cgroup_management():
     if not Path("/sys/fs/cgroup/cgroup.controllers").exists():
         logger.warning("警告: 系统不支持 cgroups v2,无法使用 CPU 限制功能")
         logger.warning("系统将以监控模式运行(仅采集指标,不限制CPU)")
+        db.insert_scheduler_log(
+            log_type="system",
+            level="warning",
+            message="系统不支持cgroup v2,CPU限制功能未启用",
+        )
         is_managed_mode = False
         return
 
@@ -361,10 +657,33 @@ def init_cgroup_management():
         cgroup_manager = CGroupManager()
         cgroup_manager.setup()
 
+        # 添加当前进程到 cgroup
+        cgroup_manager.add_current_process()
+
+        # 同步所有进程到 cgroup
+        stats = cgroup_manager.sync_all_processes()
+        logger.info(
+            f"初始进程同步: 扫描 {stats['total']} 个进程, 成功添加 {stats['added']} 个, "
+            f"跳过 {stats['skipped']} 个, 失败 {stats['failed']} 个",
+        )
+
         # 设置初始 CPU 限制
         initial_limit = config.avg_load_limit_percent
         cgroup_manager.set_cpu_limit(initial_limit)
         logger.info(f"初始 CPU 限制: {initial_limit}%")
+
+        # 记录初始化成功(包含进程同步和CPU限制设置)
+        db.insert_scheduler_log(
+            log_type="system",
+            level="info",
+            message=f"CPU限制管理已启用: 扫描 {stats['total']} 个进程, 添加 {stats['added']} 个, 初始限制 {initial_limit}%",
+            details={
+                "initial_limit": initial_limit,
+                "cgroup_path": str(cgroup_manager.cgroup_path),
+                "process_sync_stats": stats,
+            },
+            cpu_limit_after=initial_limit,
+        )
 
         is_managed_mode = True
         logger.info("CPU 限制管理已启用")
@@ -372,6 +691,12 @@ def init_cgroup_management():
     except Exception as e:
         logger.warning(f"初始化 cgroup 失败: {e}")
         logger.warning("系统将以监控模式运行(仅采集指标,不限制CPU)")
+        db.insert_scheduler_log(
+            log_type="error",
+            level="error",
+            message=f"初始化cgroup失败: {e!s}",
+            details={"error_type": type(e).__name__},
+        )
         is_managed_mode = False
 
 
