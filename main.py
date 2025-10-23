@@ -642,6 +642,12 @@ async def history_page(request: Request):
     return templates.TemplateResponse("history.html", {"request": request})
 
 
+@app.get("/change-password", response_class=HTMLResponse)
+async def change_password_page(request: Request):
+    """修改密码页面"""
+    return templates.TemplateResponse("change_password.html", {"request": request})
+
+
 # 健康检查
 @app.get("/health")
 async def health_check():

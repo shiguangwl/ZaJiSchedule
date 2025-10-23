@@ -93,10 +93,23 @@
                     </li>
                 </ul>
                 <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link" href="#" onclick="logout()">
-                            <i class="fas fa-sign-out-alt"></i> 退出
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-user"></i> <span id="currentUsername">用户</span>
                         </a>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                            <li>
+                                <a class="dropdown-item" href="/change-password">
+                                    <i class="fas fa-key"></i> 修改密码
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item" href="#" onclick="logout()">
+                                    <i class="fas fa-sign-out-alt"></i> 退出登录
+                                </a>
+                            </li>
+                        </ul>
                     </li>
                 </ul>
             </div>
@@ -176,6 +189,15 @@
         // 页面加载时检查认证
         if (window.location.pathname !== '/login') {
             checkAuth();
+
+            // 显示当前用户名
+            const username = localStorage.getItem('username');
+            if (username) {
+                const usernameElement = document.getElementById('currentUsername');
+                if (usernameElement) {
+                    usernameElement.textContent = username;
+                }
+            }
         }
     </script>
 

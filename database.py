@@ -391,6 +391,40 @@ class Database:
             row = cursor.fetchone()
             return dict(row) if row else None
 
+    def update_user_password(self, username: str, new_password: str) -> bool:
+        """
+        更新用户密码
+
+        Args:
+            username: 用户名
+            new_password: 新密码(明文)
+
+        Returns:
+            是否更新成功
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 检查用户是否存在
+            cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+            if not cursor.fetchone():
+                return False
+
+            # 生成新的密码哈希
+            password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt())
+
+            # 更新密码
+            cursor.execute(
+                """
+                UPDATE users
+                SET password_hash = ?
+                WHERE username = ?
+            """,
+                (password_hash.decode(), username),
+            )
+
+            return cursor.rowcount > 0
+
     # ==================== 调度记录相关方法 ====================
 
     def insert_scheduler_log(
