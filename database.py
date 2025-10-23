@@ -118,22 +118,38 @@ class Database:
                 ON scheduler_logs(log_type)
             """)
 
+            # 迁移/升级 schema（添加缺失列等）
+            self._migrate_schema(cursor)
+
             # 插入默认配置
             self._insert_default_config(cursor)
 
             # 插入默认用户 (admin/admin123)
             self._insert_default_user(cursor)
 
+    def _migrate_schema(self, cursor):
+        """迁移/升级数据库 schema（幂等）"""
+        try:
+            # 检查 metrics_history 是否存在 applied_cpu_limit 列
+            cursor.execute("PRAGMA table_info(metrics_history)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "applied_cpu_limit" not in columns:
+                cursor.execute("ALTER TABLE metrics_history ADD COLUMN applied_cpu_limit REAL")
+        except Exception:
+            # 旧版SQLite或其他问题时不中断主流程
+            pass
+
     def _insert_default_config(self, cursor):
         """插入默认系统配置"""
         default_configs = {
-            "min_load_percent": 10.0,
-            "max_load_percent": 90.0,
-            "rolling_window_hours": 24,
-            "avg_load_limit_percent": 28.0,  # 默认28%,低于30%限制
-            "history_retention_days": 30,
-            "metrics_interval_seconds": 15,  # 默认15秒,提高采集精度
-            "safety_factor": 0.85,  # 安全系数,留15%余量
+            "min_load_percent": 10.0,  # 最低负载
+            "max_load_percent": 90.0,  # 最高负载
+            "rolling_window_hours": 24,  # 滑动窗口
+            "avg_load_limit_percent": 30.0,  # 平均负载限制
+            "history_retention_days": 30,  # 历史数据保留天数
+            "metrics_interval_seconds": 5,  # 默认5秒,提高采集精度（按确认）
+            "process_sync_interval_seconds": 60,  # 全量进程同步间隔(秒)
+            "safety_factor": 0.9,  # 安全系数,更积极利用配额（按确认）
             "startup_safety_factor": 0.7,  # 启动初期安全系数
             "startup_data_threshold_percent": 10.0,  # 启动数据阈值(占窗口的百分比)
         }
@@ -162,7 +178,7 @@ class Database:
 
     # ==================== 性能指标相关方法 ====================
 
-    def insert_metrics(self, metrics: dict[str, float]):
+    def insert_metrics(self, metrics: dict[str, float | None]):
         """插入性能指标数据"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -171,8 +187,8 @@ class Database:
                 INSERT INTO metrics_history (
                     timestamp, cpu_percent, memory_percent, memory_used_mb,
                     memory_total_mb, disk_read_mb_per_sec, disk_write_mb_per_sec,
-                    network_sent_mb_per_sec, network_recv_mb_per_sec
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    network_sent_mb_per_sec, network_recv_mb_per_sec, applied_cpu_limit
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     datetime.now().isoformat(),
@@ -184,6 +200,7 @@ class Database:
                     metrics["disk_write_mb_per_sec"],
                     metrics["network_sent_mb_per_sec"],
                     metrics["network_recv_mb_per_sec"],
+                    metrics.get("applied_cpu_limit"),
                 ),
             )
 

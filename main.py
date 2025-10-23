@@ -343,32 +343,35 @@ async def monitor_and_adjust_cpu_limit():
         message="CPU限制监控任务启动",
     )
 
+    # 进程全量同步节流
+    import time
+
+    last_sync_time = 0.0
+    last_sync_stats = {"total": 0, "added": 0, "skipped": 0, "failed": 0}
+
     try:
         while background_task_running:
             try:
                 # 获取调度器状态
                 status = cpu_scheduler.get_scheduler_status()
-                safe_limit = status["safe_cpu_limit"]  # 归一化性能百分比
-                current_limit = cgroup_manager.get_current_limit()  # 归一化性能百分比
-                current_cpu_total = status["current_cpu_percent"]  # top中的CPU%(可能>100%)
-                avg_cpu_total = status["rolling_window_avg_cpu"]  # top中的平均CPU%
+                safe_limit = status["safe_cpu_limit"]  # cgroup归一化CPU%
+                current_limit = cgroup_manager.get_current_limit()  # cgroup归一化CPU%
+                current_cpu = status["current_cpu_percent"]  # cgroup归一化CPU%
+                avg_cpu = status["rolling_window_avg_cpu"]  # cgroup归一化CPU%
 
-                # 转换为归一化性能百分比
-                cpu_count = os.cpu_count() or 1
-                current_cpu = current_cpu_total / cpu_count  # 归一化性能
-                avg_cpu = avg_cpu_total / cpu_count  # 归一化性能
-
-                # 每次都同步所有进程(确保新启动的进程也被限制)
-                stats = cgroup_manager.sync_all_processes()
-                managed_count = stats["added"]
+                # 按配置的间隔同步所有进程(确保新启动的进程被限制)
+                now = time.monotonic()
+                sync_interval = config.process_sync_interval_seconds
+                if now - last_sync_time >= sync_interval:
+                    last_sync_stats = cgroup_manager.sync_all_processes()
+                    last_sync_time = now
+                managed_count = last_sync_stats.get("added", 0)
 
                 # 如果差异超过 5%，则调整
                 if abs(safe_limit - current_limit) > 5:
                     logger.info(
                         f"调整 CPU 限制: {current_limit:.2f}% → {safe_limit:.2f}% "
-                        f"(当前CPU: {current_cpu:.2f}%, "
-                        f"平均CPU: {avg_cpu:.2f}%, "
-                        f"管理进程: {managed_count})",
+                        f"(当前CPU: {current_cpu:.2f}%, 平均CPU: {avg_cpu:.2f}%, 管理进程: {managed_count})",
                     )
 
                     # 记录CPU限制调整
@@ -378,8 +381,8 @@ async def monitor_and_adjust_cpu_limit():
                         message=f"调整 CPU 限制: {current_limit:.2f}% → {safe_limit:.2f}%",
                         details={
                             "managed_processes": managed_count,
-                            "total_scanned": stats["total"],
-                            "skipped": stats["skipped"],
+                            "total_scanned": last_sync_stats.get("total", 0),
+                            "skipped": last_sync_stats.get("skipped", 0),
                             "quota_info": status["quota_info"],
                             "risk_level": status["risk_level"],
                         },
@@ -398,12 +401,29 @@ async def monitor_and_adjust_cpu_limit():
                 # 检查是否超限并记录告警
                 if current_cpu > safe_limit:
                     margin = current_cpu - safe_limit
+
+                    # 立即执行紧急进程同步（防抖：距上次同步至少 5 秒）
+                    emergency_sync_triggered = False
+                    if now - last_sync_time >= 5:
+                        emergency_sync_stats = cgroup_manager.sync_all_processes()
+                        last_sync_time = now
+                        last_sync_stats = emergency_sync_stats
+                        emergency_sync_triggered = True
+
+                        logger.warning(
+                            f"CPU超限触发紧急进程同步: {current_cpu:.2f}% > {safe_limit:.2f}%, "
+                            f"新增 {emergency_sync_stats.get('added', 0)} 个进程到cgroup",
+                        )
+
+                    # 记录告警日志
                     db.insert_scheduler_log(
                         log_type="alert",
                         level="warning",
                         message=f"当前CPU使用率 {current_cpu:.2f}% 超过安全限制 {safe_limit:.2f}%",
                         details={
                             "margin": margin,
+                            "emergency_sync_triggered": emergency_sync_triggered,
+                            "sync_stats": last_sync_stats if emergency_sync_triggered else None,
                             "quota_info": status["quota_info"],
                             "risk_level": status["risk_level"],
                         },
@@ -447,7 +467,16 @@ async def metrics_collection_task():
         while background_task_running:
             try:
                 # 采集指标
-                metrics = metrics_collector.collect()
+                metrics: dict[str, float | None] = metrics_collector.collect()  # type: ignore
+
+                # 读取已应用的 CPU 限制（归一化0~100%），用于持久化历史趋势
+                applied_limit: float | None = None
+                try:
+                    if is_managed_mode and cgroup_manager:
+                        applied_limit = cgroup_manager.get_current_limit()
+                except Exception:
+                    applied_limit = None
+                metrics["applied_cpu_limit"] = applied_limit
 
                 # 保存到数据库
                 db.insert_metrics(metrics)
@@ -688,9 +717,17 @@ def init_cgroup_management():
         is_managed_mode = True
         logger.info("CPU 限制管理已启用")
 
+        # 启用 cgroup 口径的 CPU 采样，确保监控/比较/展示口径一致
+        try:
+            metrics_collector.enable_cgroup_mode(cgroup_manager.cgroup_path)
+            logger.info(f"MetricsCollector 已切换为 cgroup 模式: {cgroup_manager.cgroup_path}")
+        except Exception as e:
+            logger.warning(f"切换 MetricsCollector 到 cgroup 模式失败: {e}")
+
     except Exception as e:
         logger.warning(f"初始化 cgroup 失败: {e}")
         logger.warning("系统将以监控模式运行(仅采集指标,不限制CPU)")
+
         db.insert_scheduler_log(
             log_type="error",
             level="error",
@@ -703,7 +740,5 @@ def init_cgroup_management():
 if __name__ == "__main__":
     import uvicorn
 
-    # 初始化 cgroup 管理
-    init_cgroup_management()
-
+    # cgroup 管理由 lifespan 上下文管理器初始化，避免重复调用
     uvicorn.run(app, host="0.0.0.0", port=8000)

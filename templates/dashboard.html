@@ -57,11 +57,19 @@
                     <!-- 核心指标 -->
                     <tr>
                         <td>
-                            <strong>当前 CPU 限制</strong>
+                            <strong>建议 CPU 限制（safe）</strong>
                             <i class="fas fa-info-circle text-muted" data-bs-toggle="tooltip"
-                               title="系统建议的最大CPU使用率，基于配额和安全系数计算出的实际应该限制的值"></i>
+                               title="算法计算的建议最大CPU使用率（归一化0~100%），用于指导动态调整"></i>
                         </td>
                         <td class="text-end"><strong id="safeCpuLimit" class="text-primary">--</strong>%</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <strong>已应用 CPU 限制</strong>
+                            <i class="fas fa-info-circle text-muted" data-bs-toggle="tooltip"
+                               title="当前 cgroup 已生效的 CPU 限制（归一化0~100%），与监控口径一致，可直接比较"></i>
+                        </td>
+                        <td class="text-end"><strong id="appliedCpuLimit" class="text-success">--</strong>%</td>
                     </tr>
                     <tr>
                         <td>

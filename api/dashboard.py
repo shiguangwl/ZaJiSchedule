@@ -17,7 +17,7 @@ async def get_dashboard_status(
     current_user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     """获取仪表盘状态信息"""
-    from main import cpu_scheduler, db
+    from main import cgroup_manager, cpu_scheduler, db, is_managed_mode
 
     # 获取最新的性能指标
     latest_metrics = db.get_latest_metrics(limit=1)
@@ -26,9 +26,20 @@ async def get_dashboard_status(
     # 获取调度器状态
     scheduler_status = cpu_scheduler.get_scheduler_status()
 
+    # 已应用限制（归一化CPU%）
+    applied_limit = None
+    try:
+        if is_managed_mode and cgroup_manager:
+            applied_limit = cgroup_manager.get_current_limit()
+    except Exception:
+        applied_limit = None
+
+    scheduler_status["applied_cpu_limit"] = applied_limit
+
     return {
         "current_metrics": current_metrics,
         "scheduler_status": scheduler_status,
+        "is_managed_mode": is_managed_mode,
         "timestamp": datetime.now().isoformat(),
     }
 

@@ -63,6 +63,11 @@ class ConfigManager:
         return int(self.get("metrics_interval_seconds", 15))
 
     @property
+    def process_sync_interval_seconds(self) -> int:
+        """全量进程同步到 cgroup 的间隔秒数"""
+        return int(self.get("process_sync_interval_seconds", 60))
+
+    @property
     def safety_factor(self) -> float:
         """安全系数,用于计算CPU限制(0-1之间,越小越保守)"""
         return float(self.get("safety_factor", 0.85))

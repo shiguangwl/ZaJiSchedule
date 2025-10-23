@@ -3,24 +3,76 @@
 """
 
 import time
+from pathlib import Path
 
 import psutil
 
 
 class MetricsCollector:
-    """系统性能指标采集器"""
+    """系统性能指标采集器（支持 system/cgroup 两种 CPU 采样口径）"""
 
     def __init__(self):
         # 初始化网络和磁盘 IO 计数器
         self._last_net_io = psutil.net_io_counters()
         self._last_disk_io = psutil.disk_io_counters()
         self._last_time = time.time()
-        # 初始化 CPU 百分比计数器(第一次调用返回0)
+
+        # CPU 采样模式：system 或 cgroup
+        self._cpu_mode: str = "system"
+        self._cgroup_path: Path | None = None
+        self._prev_cg_usage_usec: int | None = None
+        self._prev_cg_time: float | None = None
+
+        # system 模式下初始化 CPU 百分比计数器(第一次调用返回0)
         psutil.cpu_percent(interval=None)
+
+    def enable_cgroup_mode(self, cgroup_path: Path):
+        """启用 cgroup 口径 CPU 采样（使用 cpu.stat 的 usage_usec 计算）。"""
+        self._cpu_mode = "cgroup"
+        self._cgroup_path = cgroup_path
+        self._prev_cg_usage_usec = None
+        self._prev_cg_time = None
+
+    def _read_cgroup_usage_usec(self) -> int:
+        """读取 cgroup v2 cpu.stat 中的 usage_usec。"""
+        assert self._cgroup_path is not None
+        stat_path = self._cgroup_path / "cpu.stat"
+        content = stat_path.read_text().splitlines()
+        for line in content:
+            if line.startswith("usage_usec "):
+                return int(line.split()[1])
+        # 某些内核字段名可能略有不同，这里保守返回0
+        return 0
+
+    def _calc_cgroup_cpu_percent(self, now_time: float) -> float:
+        usage_usec = self._read_cgroup_usage_usec()
+        if self._prev_cg_usage_usec is None or self._prev_cg_time is None:
+            # 首次采样仅建立基线
+            self._prev_cg_usage_usec = usage_usec
+            self._prev_cg_time = now_time
+            return 0.0
+
+        delta_usage = max(0, usage_usec - self._prev_cg_usage_usec)
+        delta_time = max(1e-6, now_time - self._prev_cg_time)
+        cpu_count = psutil.cpu_count(logical=True) or 1
+
+        # usage_usec 是微秒；总可用 CPU 时间 = delta_time(秒) * 1e6 * cpu_count
+        percent = (delta_usage / (delta_time * 1_000_000 * cpu_count)) * 100.0
+
+        # 更新基线
+        self._prev_cg_usage_usec = usage_usec
+        self._prev_cg_time = now_time
+
+        # 约束在 0~100
+        if percent < 0:
+            percent = 0.0
+        elif percent > 100:
+            percent = 100.0
+        return percent
 
     def collect(self) -> dict[str, float]:
         """
-        采集当前系统性能指标
+        采集当前系统性能指标（CPU 百分比按当前模式采样：system 或 cgroup）
 
         Returns:
             包含所有性能指标的字典
@@ -28,8 +80,12 @@ class MetricsCollector:
         current_time = time.time()
         time_delta = current_time - self._last_time
 
-        # CPU 使用率 (使用 interval=None 获取自上次调用以来的平均值,避免阻塞)
-        cpu_percent = psutil.cpu_percent(interval=None)
+        # CPU 使用率
+        if self._cpu_mode == "cgroup" and self._cgroup_path is not None:
+            cpu_percent = self._calc_cgroup_cpu_percent(current_time)
+        else:
+            # system 模式使用 psutil 的非阻塞采样
+            cpu_percent = psutil.cpu_percent(interval=None)
 
         # 内存使用情况
         memory = psutil.virtual_memory()
@@ -67,7 +123,7 @@ class MetricsCollector:
         self._last_time = current_time
 
         return {
-            "cpu_percent": round(cpu_percent, 2),
+            "cpu_percent": round(cpu_percent, 2),  # 口径与 _cpu_mode 一致
             "memory_percent": round(memory_percent, 2),
             "memory_used_mb": round(memory_used_mb, 2),
             "memory_total_mb": round(memory_total_mb, 2),

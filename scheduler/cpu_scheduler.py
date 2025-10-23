@@ -7,8 +7,6 @@ import time
 from datetime import datetime, timedelta
 from typing import Any
 
-import psutil
-
 from config import ConfigManager
 from database import Database
 
@@ -269,10 +267,11 @@ class CPUScheduler:
         quota_info = self.calculate_remaining_quota()
         safe_limit = self.calculate_safe_cpu_limit()
 
-        # 获取当前CPU使用率
-        current_cpu = psutil.cpu_percent(interval=None)
+        # 获取当前CPU使用率（使用 MetricsCollector 已采集并写入 DB 的最新值，口径与展示一致）
+        latest = self.db.get_latest_metrics(limit=1)
+        current_cpu = float(latest[0]["cpu_percent"]) if latest else 0.0
 
-        # 计算距离限制的余量
+        # 计算距离限制的余量（统一 0~100 归一化百分比口径）
         # margin_absolute = 当前可用的安全CPU限制 - 当前瞬时CPU
         # 这表示：当前CPU距离安全限制还有多少余量
         margin_absolute = safe_limit - current_cpu

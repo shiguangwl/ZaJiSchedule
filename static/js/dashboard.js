@@ -2,6 +2,7 @@
 
 let cpuChart, memoryChart;
 let updateInterval;
+let lastSchedulerStatus = null;
 
 // 初始化图表
 function initCharts() {
@@ -81,9 +82,13 @@ async function updateDashboard() {
         // 更新调度器状态
         if (data.scheduler_status) {
             const status = data.scheduler_status;
+            lastSchedulerStatus = status;
 
             document.getElementById('avgCpu').textContent = status.rolling_window_avg_cpu + '%';
             document.getElementById('safeCpuLimit').textContent = status.safe_cpu_limit;
+            if (document.getElementById('appliedCpuLimit')) {
+                document.getElementById('appliedCpuLimit').textContent = (status.applied_cpu_limit ?? '--');
+            }
             document.getElementById('avgLoadLimit').textContent = status.avg_load_limit;
             document.getElementById('marginAbsolute').textContent = status.margin_absolute.toFixed(2);
             document.getElementById('windowHours').textContent = status.config.window_hours;
@@ -122,12 +127,13 @@ async function updateDashboard() {
                     marginStatus.className = 'badge ms-1 bg-success';
                 }
 
-                // 配额状态指示
+                // 配额状态指示（基于总配额的 10% 判断）
                 const quotaStatus = document.getElementById('quotaStatus');
+                const totalQuota = avgLimit * status.config.window_hours * 60;
                 if (remainingQuotaMin < 0) {
                     quotaStatus.textContent = '超出预算';
                     quotaStatus.className = 'badge ms-1 bg-danger';
-                } else if (remainingQuotaMin < avgLimit * status.config.window_hours * 60 * 0.2) {
+                } else if (remainingQuotaMin < totalQuota * 0.1) {
                     quotaStatus.textContent = '余量不足';
                     quotaStatus.className = 'badge ms-1 bg-warning';
                 } else {
@@ -230,6 +236,22 @@ async function updateCharts() {
         // 更新图表
         cpuChart.data.labels = labels;
         cpuChart.data.datasets[0].data = cpuData;
+
+        // 使用历史 applied_cpu_limit 序列绘制已应用限制趋势线
+        const appliedSeries = metrics.map(m => (m.applied_cpu_limit != null ? m.applied_cpu_limit : null));
+        if (cpuChart.data.datasets.length < 2) {
+            cpuChart.data.datasets.push({
+                label: '已应用限制 (%)',
+                data: appliedSeries,
+                borderColor: 'rgba(0,128,0,0.7)',
+                backgroundColor: 'rgba(0,128,0,0.05)',
+                borderDash: [6, 4],
+                pointRadius: 0,
+                tension: 0
+            });
+        } else {
+            cpuChart.data.datasets[1].data = appliedSeries;
+        }
         cpuChart.update('none');
 
         memoryChart.data.labels = labels;
