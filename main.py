@@ -432,8 +432,8 @@ async def monitor_and_adjust_cpu_limit():
                         safe_limit=safe_limit,
                     )
 
-                # 与指标采集频率保持一致,避免基于相同数据重复调整
-                interval = config.metrics_interval_seconds
+                # 使用独立的CPU限制调整间隔
+                interval = config.cpu_limit_adjust_interval_seconds
                 await asyncio.sleep(interval)
 
             except Exception as e:

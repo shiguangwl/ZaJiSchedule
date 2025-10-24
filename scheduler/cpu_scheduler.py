@@ -120,13 +120,15 @@ class CPUScheduler:
 
     def calculate_safe_cpu_limit(self) -> float:
         """
-        计算当前安全的 CPU 使用上限（基于滑动窗口）
+        计算当前安全的 CPU 使用上限（基于滑动窗口前瞻算法）
 
-        策略：预留最低负载配额，剩余部分动态分配
-        - 总配额 = avg_limit × window_hours
-        - 预留配额 = min_load × window_hours（保证最低负载）
-        - 动态配额 = 总配额 - 预留配额
-        - safe_limit = min_load + 动态部分
+        新策略：反推下一个步长内的最大安全CPU值
+        - 获取历史窗口数据 [T - window, T]
+        - 计算未来窗口 [T - window + step, T + step]
+        - 反推：下一个步长内最多能用多少CPU，才不会导致窗口平均超限
+        - 公式：X ≤ (avg_limit × window - Q_history + Q_oldest_step) / step
+
+        降级策略：数据不足时使用传统的剩余配额分配算法
 
         Returns:
             建议的 CPU 使用上限(百分比)
@@ -145,6 +147,120 @@ class CPUScheduler:
         max_load = self.config.max_load_percent
         avg_limit = self.config.avg_load_limit_percent
         window_hours = self.config.rolling_window_hours
+        window_minutes = window_hours * 60
+
+        # 获取步长配置(分钟)
+        step_seconds = self.config.cpu_limit_adjust_interval_seconds
+        step_minutes = step_seconds / 60
+
+        # 边界检查：步长不能大于窗口
+        if step_minutes >= window_minutes:
+            logger.warning(
+                f"步长({step_minutes:.2f}min) >= 窗口({window_minutes:.0f}min), 降级到传统算法",
+            )
+            return self._calculate_safe_limit_fallback()
+
+        # 获取窗口内所有数据
+        metrics = self.db.get_metrics_in_window(window_hours)
+
+        # 数据不足检查
+        if not metrics or len(metrics) < 2:
+            logger.info("数据不足，降级到传统算法")
+            return self._calculate_safe_limit_fallback()
+
+        # 找出最旧步长的时间边界
+        first_timestamp = datetime.fromisoformat(metrics[0]["timestamp"])
+        step_end_time = first_timestamp + timedelta(minutes=step_minutes)
+
+        # 丢弃最旧步长的数据，只保留剩余部分
+        remaining_metrics = []
+        for m in metrics:
+            m_time = datetime.fromisoformat(m["timestamp"])
+            if m_time > step_end_time:
+                remaining_metrics.append(m)
+
+        # 如果丢弃后数据不足，降级到传统算法
+        if not remaining_metrics:
+            logger.info("丢弃最旧步长后数据不足，降级到传统算法")
+            return self._calculate_safe_limit_fallback()
+
+        # 计算剩余数据的配额
+        avg_cpu_remaining = sum(m["cpu_percent"] for m in remaining_metrics) / len(remaining_metrics)
+
+        # 计算剩余数据的时间跨度
+        last_timestamp = datetime.fromisoformat(remaining_metrics[-1]["timestamp"])
+        now = datetime.now()
+        remaining_seconds = (now - step_end_time).total_seconds()
+        remaining_minutes = max(0, remaining_seconds / 60)
+
+        # 剩余配额 = 剩余部分的平均CPU × 剩余时长
+        Q_remaining = avg_cpu_remaining * remaining_minutes
+
+        # 计算实际运行时长(用于启动保护判断)
+        actual_seconds = (now - first_timestamp).total_seconds()
+        actual_minutes = actual_seconds / 60
+
+        # 选择安全系数
+        safety_factor = self.config.safety_factor
+        threshold_percent = self.config.startup_data_threshold_percent
+        if actual_minutes < window_minutes * (threshold_percent / 100):
+            safety_factor = self.config.startup_safety_factor
+            logger.info(
+                f"启动初期保护: 数据不足({actual_minutes:.0f}min < {window_minutes * threshold_percent / 100:.0f}min), "
+                f"使用启动安全系数 {safety_factor}",
+            )
+
+        # 滑动窗口前瞻算法：反推下一个步长的最大安全CPU
+        # 新窗口 = [T - window + step, T + step]
+        # 新配额 = Q_remaining + X × step
+        # 新平均 = 新配额 / window ≤ avg_limit
+        # X ≤ (avg_limit × window - Q_remaining) / step
+        max_next_step_cpu = (avg_limit * window_minutes - Q_remaining) / step_minutes
+
+        # 应用安全系数
+        safe_limit = max_next_step_cpu * safety_factor
+
+        # 检查时间段配置,从限制中扣除预留
+        time_slot_reserved = self._calculate_time_slot_reservation()
+        safe_limit = max(0, safe_limit - time_slot_reserved)
+
+        # 限制在 [min_load, max_load] 范围内
+        safe_limit = max(min_load, min(max_load, safe_limit))
+
+        logger.info(
+            f"[前瞻算法] 计算安全 CPU 限制: "
+            f"avg_cpu_remaining={avg_cpu_remaining:.2f}%, "
+            f"Q_remaining={Q_remaining:.2f}%·min, "
+            f"remaining_minutes={remaining_minutes:.2f}min, "
+            f"step={step_minutes:.2f}min, "
+            f"max_next_step={max_next_step_cpu:.2f}%, "
+            f"safety_factor={safety_factor:.2f}, "
+            f"time_slot_reserved={time_slot_reserved:.2f}%, "
+            f"final={safe_limit:.2f}%",
+        )
+
+        # 更新缓存
+        self._safe_limit_cache = round(safe_limit, 2)
+        self._cache_timestamp = current_time
+
+        return self._safe_limit_cache
+
+    def _calculate_safe_limit_fallback(self) -> float:
+        """
+        传统的剩余配额分配算法(降级方案)
+
+        策略：预留最低负载配额，剩余部分动态分配
+        - 总配额 = avg_limit × window_hours
+        - 预留配额 = min_load × window_hours（保证最低负载）
+        - 动态配额 = 总配额 - 预留配额
+        - safe_limit = min_load + 动态部分
+
+        Returns:
+            建议的 CPU 使用上限(百分比)
+        """
+        min_load = self.config.min_load_percent
+        max_load = self.config.max_load_percent
+        avg_limit = self.config.avg_load_limit_percent
 
         # 获取配额信息
         quota_info = self.calculate_remaining_quota()
@@ -193,7 +309,7 @@ class CPUScheduler:
         safe_limit = min(max_load, safe_limit)
 
         logger.info(
-            f"计算安全 CPU 限制: avg_cpu={avg_cpu:.2f}%, "
+            f"[传统算法] 计算安全 CPU 限制: avg_cpu={avg_cpu:.2f}%, "
             f"total_quota={total_quota:.2f}%·min, "
             f"reserved_quota={reserved_quota:.2f}%·min, "
             f"dynamic_quota={dynamic_quota:.2f}%·min, "
@@ -204,11 +320,7 @@ class CPUScheduler:
             f"final={safe_limit:.2f}%",
         )
 
-        # 更新缓存
-        self._safe_limit_cache = round(safe_limit, 2)
-        self._cache_timestamp = current_time
-
-        return self._safe_limit_cache
+        return round(safe_limit, 2)
 
     def _calculate_time_slot_reservation(self) -> float:
         """

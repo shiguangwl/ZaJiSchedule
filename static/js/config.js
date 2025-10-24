@@ -14,6 +14,7 @@ async function loadSystemConfig() {
         document.getElementById('avgLoadLimitPercent').value = config.avg_load_limit_percent;
         document.getElementById('historyRetentionDays').value = config.history_retention_days;
         document.getElementById('metricsIntervalSeconds').value = config.metrics_interval_seconds;
+        document.getElementById('cpuLimitAdjustIntervalSeconds').value = config.cpu_limit_adjust_interval_seconds || 15;
         document.getElementById('safetyFactor').value = config.safety_factor || 0.85;
         document.getElementById('startupSafetyFactor').value = config.startup_safety_factor || 0.7;
         document.getElementById('startupDataThresholdPercent').value = config.startup_data_threshold_percent || 10.0;
@@ -40,6 +41,7 @@ document.getElementById('systemConfigForm').addEventListener('submit', async (e)
         avg_load_limit_percent: parseFloat(document.getElementById('avgLoadLimitPercent').value),
         history_retention_days: parseInt(document.getElementById('historyRetentionDays').value),
         metrics_interval_seconds: parseInt(document.getElementById('metricsIntervalSeconds').value),
+        cpu_limit_adjust_interval_seconds: parseInt(document.getElementById('cpuLimitAdjustIntervalSeconds').value),
         safety_factor: parseFloat(document.getElementById('safetyFactor').value),
         startup_safety_factor: parseFloat(document.getElementById('startupSafetyFactor').value),
         startup_data_threshold_percent: parseFloat(document.getElementById('startupDataThresholdPercent').value)

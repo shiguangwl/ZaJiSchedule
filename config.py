@@ -63,6 +63,11 @@ class ConfigManager:
         return int(self.get("metrics_interval_seconds", 15))
 
     @property
+    def cpu_limit_adjust_interval_seconds(self) -> int:
+        """CPU限制调整间隔秒数(独立于采集频率)"""
+        return int(self.get("cpu_limit_adjust_interval_seconds", 15))
+
+    @property
     def process_sync_interval_seconds(self) -> int:
         """全量进程同步到 cgroup 的间隔秒数"""
         return int(self.get("process_sync_interval_seconds", 60))

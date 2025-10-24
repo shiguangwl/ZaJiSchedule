@@ -53,8 +53,16 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">指标采集间隔 (秒)</label>
-                            <input type="number" class="form-control" id="metricsIntervalSeconds" min="5" max="300" required>
+                            <input type="number" class="form-control" id="metricsIntervalSeconds" min="1" max="300" required>
                             <small class="text-muted">性能指标采集的时间间隔</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">CPU限制调整间隔 (秒)</label>
+                            <input type="number" class="form-control" id="cpuLimitAdjustIntervalSeconds" min="1" max="300" required>
+                            <small class="text-muted">CPU限制调整的时间间隔(独立于采集频率)</small>
                         </div>
                     </div>
 

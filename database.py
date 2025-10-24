@@ -148,6 +148,7 @@ class Database:
             "avg_load_limit_percent": 30.0,  # 平均负载限制
             "history_retention_days": 30,  # 历史数据保留天数
             "metrics_interval_seconds": 5,  # 默认5秒,提高采集精度（按确认）
+            "cpu_limit_adjust_interval_seconds": 15,  # CPU限制调整间隔(秒),独立于采集频率
             "process_sync_interval_seconds": 60,  # 全量进程同步间隔(秒)
             "safety_factor": 0.9,  # 安全系数,更积极利用配额（按确认）
             "startup_safety_factor": 0.7,  # 启动初期安全系数

@@ -19,6 +19,7 @@ class SystemConfigUpdate(BaseModel):
     avg_load_limit_percent: float
     history_retention_days: int
     metrics_interval_seconds: int
+    cpu_limit_adjust_interval_seconds: int
     safety_factor: float
     startup_safety_factor: float
     startup_data_threshold_percent: float
