@@ -33,9 +33,11 @@ class ChangePasswordResponse(BaseModel):
 @router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
     """用户登录"""
-    from main import db
+    import sys
 
-    user = authenticate_user(db, request.username, request.password)
+    main_module = sys.modules["__main__"]
+
+    user = authenticate_user(main_module.db, request.username, request.password)
 
     if not user:
         raise HTTPException(

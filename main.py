@@ -297,7 +297,11 @@ class CGroupManager:
 
             # 计算归一化性能百分比: (quota / period / cpu_count) * 100
             return (quota / period / cpu_count) * 100
-        except Exception:
+        except Exception as e:
+            logger.error(
+                f"读取CPU限制失败: {e}, 文件路径: {self.cpu_max_file}",
+                exc_info=True,
+            )
             return 0.0
 
     def cleanup(self) -> None:

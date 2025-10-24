@@ -43,9 +43,11 @@ async def get_system_config(
     current_user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     """获取系统配置"""
-    from main import config
+    import sys
 
-    return config.get_all()
+    main_module = sys.modules["__main__"]
+
+    return main_module.config.get_all()
 
 
 @router.put("/system")
@@ -54,7 +56,9 @@ async def update_system_config(
     current_user: dict = Depends(get_current_user),
 ) -> dict[str, str]:
     """更新系统配置"""
-    from main import config
+    import sys
+
+    main_module = sys.modules["__main__"]
 
     # 验证配置值
     if config_update.min_load_percent < 0 or config_update.min_load_percent > 100:
@@ -82,7 +86,7 @@ async def update_system_config(
         raise HTTPException(status_code=400, detail="startup_data_threshold_percent 必须在 1-50 之间")
 
     # 更新配置
-    config.update_batch(config_update.dict())
+    main_module.config.update_batch(config_update.dict())
 
     return {"message": "配置更新成功"}
 
@@ -92,9 +96,11 @@ async def get_time_slots(
     current_user: dict = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     """获取所有时间段配置"""
-    from main import db
+    import sys
 
-    return db.get_time_slots()
+    main_module = sys.modules["__main__"]
+
+    return main_module.db.get_time_slots()
 
 
 @router.post("/timeslots")
@@ -103,7 +109,9 @@ async def create_time_slot(
     current_user: dict = Depends(get_current_user),
 ) -> dict[str, str]:
     """创建时间段配置"""
-    from main import db
+    import sys
+
+    main_module = sys.modules["__main__"]
 
     # 验证时间格式
     try:
@@ -117,7 +125,7 @@ async def create_time_slot(
     if time_slot.max_load_percent < 0 or time_slot.max_load_percent > 100:
         raise HTTPException(status_code=400, detail="max_load_percent 必须在 0-100 之间")
 
-    db.add_time_slot(
+    main_module.db.add_time_slot(
         time_slot.start_time,
         time_slot.end_time,
         time_slot.max_load_percent,
@@ -133,7 +141,9 @@ async def update_time_slot(
     current_user: dict = Depends(get_current_user),
 ) -> dict[str, str]:
     """更新时间段配置"""
-    from main import db
+    import sys
+
+    main_module = sys.modules["__main__"]
 
     # 验证时间格式
     try:
@@ -147,7 +157,7 @@ async def update_time_slot(
     if time_slot.max_load_percent < 0 or time_slot.max_load_percent > 100:
         raise HTTPException(status_code=400, detail="max_load_percent 必须在 0-100 之间")
 
-    db.update_time_slot(
+    main_module.db.update_time_slot(
         slot_id,
         time_slot.start_time,
         time_slot.end_time,
@@ -164,7 +174,9 @@ async def delete_time_slot(
     current_user: dict = Depends(get_current_user),
 ) -> dict[str, str]:
     """删除时间段配置"""
-    from main import db
+    import sys
 
-    db.delete_time_slot(slot_id)
+    main_module = sys.modules["__main__"]
+
+    main_module.db.delete_time_slot(slot_id)
     return {"message": "时间段配置删除成功"}

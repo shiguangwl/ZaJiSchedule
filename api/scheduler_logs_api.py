@@ -21,9 +21,11 @@ async def get_scheduler_logs(
     current_user: dict = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     """获取调度记录"""
-    from main import db
+    import sys
 
-    return db.get_scheduler_logs(
+    main_module = sys.modules["__main__"]
+
+    return main_module.db.get_scheduler_logs(
         log_type=log_type,
         level=level,
         hours=hours,
@@ -41,12 +43,14 @@ async def get_scheduler_logs_by_range(
     current_user: dict = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     """按时间范围查询调度记录"""
-    from main import db
+    import sys
+
+    main_module = sys.modules["__main__"]
 
     start_dt = datetime.fromisoformat(start_time)
     end_dt = datetime.fromisoformat(end_time)
 
-    return db.get_scheduler_logs_by_range(
+    return main_module.db.get_scheduler_logs_by_range(
         start_time=start_dt,
         end_time=end_dt,
         log_type=log_type,
@@ -61,9 +65,11 @@ async def get_scheduler_logs_stats(
     current_user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     """获取调度记录统计信息"""
-    from main import db
+    import sys
 
-    logs = db.get_scheduler_logs(hours=hours, limit=10000)
+    main_module = sys.modules["__main__"]
+
+    logs = main_module.db.get_scheduler_logs(hours=hours, limit=10000)
 
     # 统计各类型数量
     type_counts = {}
@@ -81,12 +87,14 @@ async def get_scheduler_logs_stats(
 
         # 收集CPU限制调整记录
         if log_type == "cpu_limit_adjust" and log["cpu_limit_before"] and log["cpu_limit_after"]:
-            cpu_limit_adjustments.append({
-                "timestamp": log["timestamp"],
-                "from": log["cpu_limit_before"],
-                "to": log["cpu_limit_after"],
-                "change": log["cpu_limit_after"] - log["cpu_limit_before"],
-            })
+            cpu_limit_adjustments.append(
+                {
+                    "timestamp": log["timestamp"],
+                    "from": log["cpu_limit_before"],
+                    "to": log["cpu_limit_after"],
+                    "change": log["cpu_limit_after"] - log["cpu_limit_before"],
+                },
+            )
 
     return {
         "total_logs": len(logs),
@@ -96,4 +104,3 @@ async def get_scheduler_logs_stats(
         "alert_count": type_counts.get("alert", 0),
         "error_count": type_counts.get("error", 0),
     }
-
