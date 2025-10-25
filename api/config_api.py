@@ -16,6 +16,7 @@ class SystemConfigUpdate(BaseModel):
     min_load_percent: float
     max_load_percent: float
     rolling_window_hours: int
+    window_start_hour: int
     avg_load_limit_percent: float
     history_retention_days: int
     metrics_interval_seconds: int
@@ -23,6 +24,7 @@ class SystemConfigUpdate(BaseModel):
     safety_factor: float
     startup_safety_factor: float
     startup_data_threshold_percent: float
+    cpu_limit_tolerance_percent: float
 
 
 class TimeSlotCreate(BaseModel):
@@ -73,6 +75,9 @@ async def update_system_config(
     if config_update.rolling_window_hours < 1:
         raise HTTPException(status_code=400, detail="rolling_window_hours 必须大于 0")
 
+    if config_update.window_start_hour < 0 or config_update.window_start_hour > 23:
+        raise HTTPException(status_code=400, detail="window_start_hour 必须在 0-23 之间")
+
     if config_update.avg_load_limit_percent < 0 or config_update.avg_load_limit_percent > 100:
         raise HTTPException(status_code=400, detail="avg_load_limit_percent 必须在 0-100 之间")
 
@@ -84,6 +89,9 @@ async def update_system_config(
 
     if config_update.startup_data_threshold_percent < 1 or config_update.startup_data_threshold_percent > 50:
         raise HTTPException(status_code=400, detail="startup_data_threshold_percent 必须在 1-50 之间")
+
+    if config_update.cpu_limit_tolerance_percent < 0 or config_update.cpu_limit_tolerance_percent > 10:
+        raise HTTPException(status_code=400, detail="cpu_limit_tolerance_percent 必须在 0-10 之间")
 
     # 更新配置
     main_module.config.update_batch(config_update.dict())

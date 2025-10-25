@@ -198,7 +198,7 @@ async function updateDashboard() {
                 'low': { text: '低', class: 'risk-low' },
                 'medium': { text: '中', class: 'risk-medium' },
                 'high': { text: '高', class: 'risk-high' },
-                'critical': { text: '危险', class: 'risk-critical' }
+                'critical': { text: '超高', class: 'risk-critical' }
             };
 
             const risk = riskMap[status.risk_level] || { text: '未知', class: '' };

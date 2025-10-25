@@ -144,15 +144,17 @@ class Database:
         default_configs = {
             "min_load_percent": 10.0,  # 最低负载
             "max_load_percent": 90.0,  # 最高负载
-            "rolling_window_hours": 24,  # 滑动窗口
+            "rolling_window_hours": 24,  # 窗口大小（小时）
+            "window_start_hour": 0,  # 窗口开始时间（小时，0-23）
             "avg_load_limit_percent": 30.0,  # 平均负载限制
             "history_retention_days": 30,  # 历史数据保留天数
             "metrics_interval_seconds": 5,  # 默认5秒,提高采集精度（按确认）
             "cpu_limit_adjust_interval_seconds": 15,  # CPU限制调整间隔(秒),独立于采集频率
             "process_sync_interval_seconds": 60,  # 全量进程同步间隔(秒)
             "safety_factor": 0.9,  # 安全系数,更积极利用配额（按确认）
-            "startup_safety_factor": 0.7,  # 启动初期安全系数
-            "startup_data_threshold_percent": 10.0,  # 启动数据阈值(占窗口的百分比)
+            "startup_safety_factor": 0.7,  # 启动初期安全系数(数据不足时使用)
+            "startup_data_threshold_percent": 10.0,  # 启动初期数据阈值(占窗口时长的百分比)
+            "cpu_limit_tolerance_percent": 1.0,  # CPU限制容差(百分比),避免统计精度导致的误报警告
         }
 
         for key, value in default_configs.items():
@@ -248,6 +250,28 @@ class Database:
                 ORDER BY timestamp ASC
             """,
                 (start_time.isoformat(), end_time.isoformat()),
+            )
+
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_metrics_since(self, start_time_iso: str) -> list[dict[str, Any]]:
+        """获取指定时间点之后的所有性能指标
+
+        Args:
+            start_time_iso: ISO格式的起始时间字符串
+
+        Returns:
+            性能指标列表,按时间升序排列
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM metrics_history
+                WHERE timestamp >= ?
+                ORDER BY timestamp ASC
+            """,
+                (start_time_iso,),
             )
 
             return [dict(row) for row in cursor.fetchall()]
@@ -422,6 +446,42 @@ class Database:
                 WHERE username = ?
             """,
                 (password_hash.decode(), username),
+            )
+
+            return cursor.rowcount > 0
+
+    def update_username(self, old_username: str, new_username: str) -> bool:
+        """
+        更新用户名
+
+        Args:
+            old_username: 旧用户名
+            new_username: 新用户名
+
+        Returns:
+            是否更新成功
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 检查旧用户是否存在
+            cursor.execute("SELECT id FROM users WHERE username = ?", (old_username,))
+            if not cursor.fetchone():
+                return False
+
+            # 检查新用户名是否已存在
+            cursor.execute("SELECT id FROM users WHERE username = ?", (new_username,))
+            if cursor.fetchone():
+                return False
+
+            # 更新用户名
+            cursor.execute(
+                """
+                UPDATE users
+                SET username = ?
+                WHERE username = ?
+            """,
+                (new_username, old_username),
             )
 
             return cursor.rowcount > 0

@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+
+{% block title %}账号设置 - CPU 智能调度系统{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <h2 class="mb-4">
+            <i class="fas fa-user-cog"></i> 账号设置
+        </h2>
+
+        <!-- 成功提示 -->
+        <div id="successAlert" class="alert alert-success d-none" role="alert">
+            <i class="fas fa-check-circle"></i> <span id="successMessage"></span>
+        </div>
+
+        <!-- 错误提示 -->
+        <div id="errorAlert" class="alert alert-danger d-none" role="alert">
+            <i class="fas fa-exclamation-circle"></i> <span id="errorMessage"></span>
+        </div>
+
+        <div class="row">
+            <!-- 修改用户名 -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <i class="fas fa-user-edit"></i> 修改用户名
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="changeUsernameForm">
+                            <div class="mb-3">
+                                <label for="currentUsername" class="form-label">
+                                    <i class="fas fa-user"></i> 当前用户名
+                                </label>
+                                <input 
+                                    type="text" 
+                                    class="form-control" 
+                                    id="currentUsername" 
+                                    readonly
+                                    disabled
+                                >
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="newUsername" class="form-label">
+                                    <i class="fas fa-user"></i> 新用户名
+                                </label>
+                                <input 
+                                    type="text" 
+                                    class="form-control" 
+                                    id="newUsername" 
+                                    name="new_username"
+                                    required
+                                    minlength="3"
+                                    maxlength="50"
+                                    pattern="[a-zA-Z0-9_]+"
+                                    autocomplete="username"
+                                >
+                                <div class="form-text">3-50个字符，只能包含字母、数字和下划线</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="usernamePassword" class="form-label">
+                                    <i class="fas fa-lock"></i> 当前密码
+                                </label>
+                                <input 
+                                    type="password" 
+                                    class="form-control" 
+                                    id="usernamePassword" 
+                                    name="password"
+                                    required
+                                    autocomplete="current-password"
+                                >
+                                <div class="form-text">需要验证当前密码</div>
+                            </div>
+
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save"></i> 修改用户名
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 修改密码 -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            <i class="fas fa-key"></i> 修改密码
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="changePasswordForm">
+                            <div class="mb-3">
+                                <label for="oldPassword" class="form-label">
+                                    <i class="fas fa-lock"></i> 当前密码
+                                </label>
+                                <input 
+                                    type="password" 
+                                    class="form-control" 
+                                    id="oldPassword" 
+                                    name="old_password"
+                                    required
+                                    autocomplete="current-password"
+                                >
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="newPassword" class="form-label">
+                                    <i class="fas fa-lock"></i> 新密码
+                                </label>
+                                <input 
+                                    type="password" 
+                                    class="form-control" 
+                                    id="newPassword" 
+                                    name="new_password"
+                                    required
+                                    minlength="6"
+                                    autocomplete="new-password"
+                                >
+                                <div class="form-text">密码至少6个字符</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="confirmPassword" class="form-label">
+                                    <i class="fas fa-lock"></i> 确认新密码
+                                </label>
+                                <input 
+                                    type="password" 
+                                    class="form-control" 
+                                    id="confirmPassword" 
+                                    name="confirm_password"
+                                    required
+                                    minlength="6"
+                                    autocomplete="new-password"
+                                >
+                            </div>
+
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-success">
+                                    <i class="fas fa-save"></i> 修改密码
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 安全提示 -->
+        <div class="card">
+            <div class="card-body">
+                <h6 class="card-title">
+                    <i class="fas fa-shield-alt text-info"></i> 安全提示
+                </h6>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="text-muted small">用户名安全建议</h6>
+                        <ul class="mb-0 small text-muted">
+                            <li>用户名长度3-50个字符</li>
+                            <li>只能包含字母、数字和下划线</li>
+                            <li>修改用户名后需要重新登录</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted small">密码安全建议</h6>
+                        <ul class="mb-0 small text-muted">
+                            <li>密码长度至少6个字符</li>
+                            <li>建议使用字母、数字和特殊字符的组合</li>
+                            <li>不要使用过于简单的密码</li>
+                            <li>定期更换密码以提高安全性</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <a href="/dashboard" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> 返回仪表盘
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const changeUsernameForm = document.getElementById('changeUsernameForm');
+    const changePasswordForm = document.getElementById('changePasswordForm');
+    const successAlert = document.getElementById('successAlert');
+    const errorAlert = document.getElementById('errorAlert');
+    const successMessage = document.getElementById('successMessage');
+    const errorMessage = document.getElementById('errorMessage');
+
+    // 加载当前用户名
+    const currentUsername = localStorage.getItem('username') || 'admin';
+    document.getElementById('currentUsername').value = currentUsername;
+
+    // 隐藏提示
+    function hideAlerts() {
+        successAlert.classList.add('d-none');
+        errorAlert.classList.add('d-none');
+    }
+
+    // 显示成功提示
+    function showSuccess(message, redirectDelay = 3000) {
+        hideAlerts();
+        successMessage.textContent = message;
+        successAlert.classList.remove('d-none');
+        
+        if (redirectDelay > 0) {
+            setTimeout(() => {
+                window.location.href = '/dashboard';
+            }, redirectDelay);
+        }
+    }
+
+    // 显示错误提示
+    function showError(message) {
+        hideAlerts();
+        errorMessage.textContent = message;
+        errorAlert.classList.remove('d-none');
+        
+        // 滚动到顶部显示错误
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // 修改用户名表单提交
+    changeUsernameForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        hideAlerts();
+
+        const newUsername = document.getElementById('newUsername').value.trim();
+        const password = document.getElementById('usernamePassword').value;
+
+        // 前端验证
+        if (newUsername.length < 3 || newUsername.length > 50) {
+            showError('用户名长度必须在3-50个字符之间');
+            return;
+        }
+
+        if (!/^[a-zA-Z0-9_]+$/.test(newUsername)) {
+            showError('用户名只能包含字母、数字和下划线');
+            return;
+        }
+
+        if (newUsername === currentUsername) {
+            showError('新用户名不能与当前用户名相同');
+            return;
+        }
+
+        // 提交到后端
+        try {
+            const response = await apiRequest('/api/auth/change-username', {
+                method: 'POST',
+                body: JSON.stringify({
+                    new_username: newUsername,
+                    password: password
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                
+                // 更新本地存储
+                localStorage.setItem('access_token', data.new_token);
+                localStorage.setItem('username', data.new_username);
+                
+                showSuccess(data.message + '，即将跳转到登录页面...', 2000);
+                
+                // 2秒后跳转到登录页面
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 2000);
+            } else {
+                const error = await response.json();
+                showError(error.detail || '用户名修改失败');
+            }
+        } catch (error) {
+            showError('网络错误，请稍后重试');
+            console.error('修改用户名错误:', error);
+        }
+    });
+
+    // 修改密码表单提交
+    changePasswordForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        hideAlerts();
+
+        const oldPassword = document.getElementById('oldPassword').value;
+        const newPassword = document.getElementById('newPassword').value;
+        const confirmPassword = document.getElementById('confirmPassword').value;
+
+        // 前端验证
+        if (newPassword.length < 6) {
+            showError('新密码至少需要6个字符');
+            return;
+        }
+
+        if (newPassword !== confirmPassword) {
+            showError('两次输入的新密码不一致');
+            return;
+        }
+
+        if (oldPassword === newPassword) {
+            showError('新密码不能与当前密码相同');
+            return;
+        }
+
+        // 提交到后端
+        try {
+            const response = await apiRequest('/api/auth/change-password', {
+                method: 'POST',
+                body: JSON.stringify({
+                    old_password: oldPassword,
+                    new_password: newPassword
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                showSuccess(data.message + '，即将跳转到仪表盘...');
+                changePasswordForm.reset();
+            } else {
+                const error = await response.json();
+                showError(error.detail || '密码修改失败');
+            }
+        } catch (error) {
+            showError('网络错误，请稍后重试');
+            console.error('修改密码错误:', error);
+        }
+    });
+
+    // 实时验证确认密码
+    document.getElementById('confirmPassword').addEventListener('input', function() {
+        const newPassword = document.getElementById('newPassword').value;
+        const confirmPassword = this.value;
+        
+        if (confirmPassword && newPassword !== confirmPassword) {
+            this.setCustomValidity('两次输入的密码不一致');
+        } else {
+            this.setCustomValidity('');
+        }
+    });
+</script>
+{% endblock %}
+

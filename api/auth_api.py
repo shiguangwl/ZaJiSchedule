@@ -30,6 +30,17 @@ class ChangePasswordResponse(BaseModel):
     message: str
 
 
+class ChangeUsernameRequest(BaseModel):
+    new_username: str = Field(..., min_length=3, max_length=50, description="新用户名,3-50个字符")
+    password: str = Field(..., min_length=1, description="当前密码用于验证")
+
+
+class ChangeUsernameResponse(BaseModel):
+    message: str
+    new_token: str
+    new_username: str
+
+
 @router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
     """用户登录"""
@@ -93,3 +104,58 @@ async def change_password(
         )
 
     return ChangePasswordResponse(message="密码修改成功")
+
+
+@router.post("/change-username", response_model=ChangeUsernameResponse)
+async def change_username(
+    request: ChangeUsernameRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    修改当前用户名
+
+    需要提供新用户名和当前密码进行验证。新用户名3-50个字符。
+    """
+    from main import db
+
+    old_username = current_user["username"]
+    new_username = request.new_username.strip()
+
+    # 验证当前密码
+    if not db.verify_user(old_username, request.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="密码错误",
+        )
+
+    # 验证新用户名不能与旧用户名相同
+    if old_username == new_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="新用户名不能与当前用户名相同",
+        )
+
+    # 验证新用户名格式
+    if not new_username.isalnum() and "_" not in new_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="用户名只能包含字母、数字和下划线",
+        )
+
+    # 更新用户名
+    success = db.update_username(old_username, new_username)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="用户名已存在或更新失败",
+        )
+
+    # 生成新的 token
+    new_token = create_access_token(data={"sub": new_username})
+
+    return ChangeUsernameResponse(
+        message="用户名修改成功",
+        new_token=new_token,
+        new_username=new_username,
+    )

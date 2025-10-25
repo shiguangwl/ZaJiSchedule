@@ -402,8 +402,9 @@ async def monitor_and_adjust_cpu_limit():
                 elif managed_count > 0:
                     logger.debug(f"进程同步: 新添加 {managed_count} 个进程到cgroup")
 
-                # 检查是否超限并记录告警
-                if current_cpu > safe_limit:
+                # 检查是否超限并记录告警(考虑容差范围)
+                tolerance = config.cpu_limit_tolerance_percent
+                if current_cpu > safe_limit + tolerance:
                     margin = current_cpu - safe_limit
 
                     # 立即执行紧急进程同步（防抖：距上次同步至少 5 秒）
@@ -415,7 +416,7 @@ async def monitor_and_adjust_cpu_limit():
                         emergency_sync_triggered = True
 
                         logger.warning(
-                            f"CPU超限触发紧急进程同步: {current_cpu:.2f}% > {safe_limit:.2f}%, "
+                            f"CPU超限触发紧急进程同步: {current_cpu:.2f}% > {safe_limit:.2f}% (容差: {tolerance:.2f}%), "
                             f"新增 {emergency_sync_stats.get('added', 0)} 个进程到cgroup",
                         )
 
@@ -423,9 +424,10 @@ async def monitor_and_adjust_cpu_limit():
                     db.insert_scheduler_log(
                         log_type="alert",
                         level="warning",
-                        message=f"当前CPU使用率 {current_cpu:.2f}% 超过安全限制 {safe_limit:.2f}%",
+                        message=f"当前CPU使用率 {current_cpu:.2f}% 超过安全限制 {safe_limit:.2f}% (容差: {tolerance:.2f}%)",
                         details={
                             "margin": margin,
+                            "tolerance": tolerance,
                             "emergency_sync_triggered": emergency_sync_triggered,
                             "sync_stats": last_sync_stats if emergency_sync_triggered else None,
                             "quota_info": status["quota_info"],
@@ -648,8 +650,14 @@ async def history_page(request: Request):
 
 @app.get("/change-password", response_class=HTMLResponse)
 async def change_password_page(request: Request):
-    """修改密码页面"""
+    """修改密码页面（已废弃，重定向到账号设置）"""
     return templates.TemplateResponse("change_password.html", {"request": request})
+
+
+@app.get("/account-settings", response_class=HTMLResponse)
+async def account_settings_page(request: Request):
+    """账号设置页面"""
+    return templates.TemplateResponse("account_settings.html", {"request": request})
 
 
 # 健康检查

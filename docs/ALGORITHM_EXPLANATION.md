@@ -17,63 +17,73 @@
 
 ### 核心思想
 
-1. **滚动窗口**：持续监控过去 N 小时的平均 CPU 使用率
+1. **滚动窗口**：固定窗口开始时间（如每天00:00），持续监控窗口内的平均 CPU 使用率
 2. **配额管理**：将 CPU 使用视为"配额"，跟踪已用和剩余
-3. **动态调整**：根据剩余配额动态调整未来的 CPU 限制
+3. **最低负载预留**：优先保证剩余时间的最低负载配额
+4. **动态调整**：剩余配额动态分配，safe_limit = min_load + 动态部分
 
 ### 关键概念
 
 - **窗口时长**：监控的时间范围（如 24 小时）
+- **窗口开始时间**：固定的窗口开始时间（如 00:00，可配置）
 - **平均限制**：窗口内的平均 CPU 不能超过的值（如 30%）
-- **配额**：用"百分比·小时"作为单位，表示 CPU 使用量
-- **滚动**：窗口随时间移动，始终是"现在 - N 小时"到"现在"
+- **最低负载**：系统保证的最低运行负载（如 10%）
+- **配额**：用"百分比·分钟"作为单位，表示 CPU 使用量
+- **滚动**：窗口每天固定时间重置，确保不会超限
 
 ---
 
 ## 滚动窗口算法
 
-### 固定窗口 vs 滚动窗口
+### 滑动窗口 vs 滚动窗口
 
-#### 固定窗口（错误）
-
-```
-时间轴: ─────────────────────────────────────────────►
-        0h      6h      12h     18h     24h
-        ├───────┼───────┼───────┼───────┤
-        │◄──────── 固定窗口 ────────────►│
-
-启动时间: 0h
-窗口: [0h, 24h]
-问题: 窗口不移动，24小时后需要重置
-```
-
-#### 滚动窗口（正确）
+#### 滑动窗口（旧版本，已废弃）
 
 ```
 时间轴: ─────────────────────────────────────────────►
         -24h    -18h    -12h    -6h     现在
         ├───────┼───────┼───────┼───────┤
-        │◄──────── 滚动窗口 ────────────►│
+        │◄──────── 滑动窗口 ────────────►│
 
 任意时刻: 现在
 窗口: [现在-24h, 现在]
-优点: 窗口持续移动，实时反映最近24小时
+问题: 窗口持续移动，可能导致配额分配不当而超限
+```
+
+#### 滚动窗口（当前版本）
+
+```
+时间轴: ─────────────────────────────────────────────►
+        00:00   06:00   12:00   18:00   24:00
+        ├───────┼───────┼───────┼───────┤
+        │◄──────── 滚动窗口 ────────────►│
+
+窗口开始: 00:00 (可配置)
+窗口结束: 24:00
+窗口: [00:00, 24:00]
+优点: 窗口固定，每天重置，绝对保证不超限
 ```
 
 ### 实现
 
 ```python
-def get_metrics_in_window(hours: int) -> list:
-    """获取滚动窗口内的数据"""
-    start_time = datetime.now() - timedelta(hours=hours)
-    end_time = datetime.now()
+def _get_current_window_bounds(self) -> tuple[datetime, datetime]:
+    """获取当前滚动窗口的开始和结束时间"""
+    now = datetime.now()
+    window_start_hour = self.config.window_start_hour  # 默认 0
+    window_hours = self.config.rolling_window_hours    # 默认 24
 
-    # 查询 [start_time, end_time] 范围内的数据
-    return db.query(
-        "SELECT * FROM metrics_history "
-        "WHERE timestamp >= ? AND timestamp <= ?",
-        (start_time, end_time)
-    )
+    # 计算窗口开始时间
+    window_start = now.replace(hour=window_start_hour, minute=0, second=0, microsecond=0)
+
+    # 如果当前时间在窗口开始时间之前，窗口应该是前一天的
+    if now < window_start:
+        window_start = window_start - timedelta(days=1)
+
+    # 计算窗口结束时间
+    window_end = window_start + timedelta(hours=window_hours)
+
+    return window_start, window_end
 ```
 
 ---
@@ -182,75 +192,89 @@ def get_metrics_in_window(hours: int) -> list:
 
 ## 安全限制算法
 
-### 目标 CPU
+### 核心逻辑
 
-**定义**：未来应该保持的 CPU 使用率
+**定义**：基于剩余配额和最低负载预留计算安全限制
 
 **公式**：
 ```
-剩余时间（分钟） = 窗口时长（分钟） - 实际运行时长（分钟）
-目标 CPU = 剩余配额 / 剩余时间
+# 1. 计算未来需要的最低负载配额
+future_min_quota = min_load × remaining_minutes
+
+# 2. 判断剩余配额是否充足
+if remaining_quota <= 0:
+    safe_limit = min_load  # 配额耗尽，使用最低负载
+elif remaining_quota < future_min_quota:
+    safe_limit = min_load  # 配额不足，使用最低负载
+else:
+    # 配额充足，可以分配动态部分
+    dynamic_quota = remaining_quota - future_min_quota
+    dynamic_limit = (dynamic_quota / remaining_minutes) × safety_factor
+    safe_limit = min_load + dynamic_limit
+
+# 3. 限制在 [min_load, max_load] 范围内
+safe_limit = max(min_load, min(max_load, safe_limit))
 ```
 
 **示例**：
 ```
-剩余配额 = 41010 %·min
-剩余时间 = 1440 - 60 = 1380 分钟
-目标 CPU = 41010 / 1380 = 29.7%
+min_load = 10%
+max_load = 90%
+safety_factor = 0.9
+remaining_quota = 41010 %·min
+remaining_minutes = 1380 min
+
+future_min_quota = 10% × 1380 = 13800 %·min
+dynamic_quota = 41010 - 13800 = 27210 %·min
+dynamic_limit = (27210 / 1380) × 0.9 = 17.7%
+safe_limit = 10% + 17.7% = 27.7%
 ```
 
 **含义**：
-- 未来 1380 分钟（23 小时）内，如果保持在 29.7% 以下
-- 24 小时平均 CPU 将不超过 30%
-
-### 安全限制
-
-**定义**：应用安全系数后的限制
-
-**公式**：
-```
-安全限制 = 目标 CPU × 安全系数
-```
-
-**示例**：
-```
-目标 CPU = 29.7%
-安全系数 = 0.9
-安全限制 = 29.7% × 0.9 = 26.7%
-```
-
-**原因**：
-- 留出 10% 的余量
-- 应对突发负载
-- 避免因短时间波动而超限
+- 优先保证剩余时间的最低负载（10%）
+- 剩余配额动态分配，应用安全系数（0.9）
+- 最终限制 = 最低负载 + 动态部分
 
 ### 边界处理
 
-#### 情况 1：剩余时间 > 0
+#### 情况 1：配额充足
 
 ```python
-if remaining_hours > 0:
-    target_cpu = max(0, min(100, remaining_quota / remaining_hours))
+if remaining_quota >= future_min_quota:
+    dynamic_quota = remaining_quota - future_min_quota
+    dynamic_limit = (dynamic_quota / remaining_minutes) × safety_factor
+    safe_limit = min_load + dynamic_limit
 ```
 
 **说明**：
-- 正常计算目标 CPU
-- 限制在 [0, 100] 范围内
+- 剩余配额充足，可以分配动态部分
+- 应用安全系数，留出余量
 
-#### 情况 2：剩余时间 = 0（窗口已满）
+#### 情况 2：配额不足
 
 ```python
-else:
-    if remaining_quota >= 0:
-        target_cpu = avg_limit  # 未超限，保持限制
-    else:
-        target_cpu = 0  # 已超限，停止使用
+elif remaining_quota < future_min_quota:
+    safe_limit = min_load
+    logger.error("配额管理失败！剩余配额不足，但仍使用最低负载以保证系统运行")
 ```
 
 **说明**：
-- 窗口已满，无剩余时间
-- 如果未超限，可以继续保持在限制内
-- 如果已超限，应该停止使用 CPU
+- 剩余配额不足以支持最低负载
+- 仍使用最低负载，发出 ERROR 警告
+- 预计将超限，需要调整安全系数
+
+#### 情况 3：配额耗尽
+
+```python
+if remaining_quota <= 0:
+    safe_limit = min_load
+    logger.error("配额管理失败！剩余配额耗尽，但仍使用最低负载以保证系统运行")
+```
+
+**说明**：
+- 剩余配额耗尽
+- 仍使用最低负载，发出 ERROR 警告
+- 预计将超限，需要调整安全系数
 
 ---
 

@@ -51,8 +51,12 @@ class ConfigManager:
         return int(self.get("rolling_window_hours", 24))
 
     @property
+    def window_start_hour(self) -> int:
+        return int(self.get("window_start_hour", 0))
+
+    @property
     def avg_load_limit_percent(self) -> float:
-        return float(self.get("avg_load_limit_percent", 28.0))
+        return float(self.get("avg_load_limit_percent", 30.0))
 
     @property
     def history_retention_days(self) -> int:
@@ -86,3 +90,8 @@ class ConfigManager:
     def startup_data_threshold_percent(self) -> float:
         """启动初期数据阈值(占窗口时长的百分比,低于此值使用启动安全系数)"""
         return float(self.get("startup_data_threshold_percent", 10.0))
+
+    @property
+    def cpu_limit_tolerance_percent(self) -> float:
+        """CPU限制容差(百分比),避免统计精度导致的误报警告"""
+        return float(self.get("cpu_limit_tolerance_percent", 1.0))
