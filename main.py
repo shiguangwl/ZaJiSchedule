@@ -361,11 +361,11 @@ async def monitor_and_adjust_cpu_limit():
                 safe_limit = status["safe_cpu_limit"]  # cgroup归一化CPU%
                 current_limit = cgroup_manager.get_current_limit()  # cgroup归一化CPU%
                 current_cpu = status["current_cpu_percent"]  # cgroup归一化CPU%
-                avg_cpu = status["rolling_window_avg_cpu"]  # cgroup归一化CPU%
+                avg_cpu = status["sliding_window_avg_cpu"]  # cgroup归一化CPU%
 
                 # 按配置的间隔同步所有进程(确保新启动的进程被限制)
                 now = time.monotonic()
-                sync_interval = config.process_sync_interval_seconds
+                sync_interval = 60  # 固定60秒间隔
                 if now - last_sync_time >= sync_interval:
                     last_sync_stats = cgroup_manager.sync_all_processes()
                     last_sync_time = now
@@ -375,7 +375,7 @@ async def monitor_and_adjust_cpu_limit():
                 if abs(safe_limit - current_limit) > 5:
                     logger.info(
                         f"调整 CPU 限制: {current_limit:.2f}% → {safe_limit:.2f}% "
-                        f"(当前CPU: {current_cpu:.2f}%, 平均CPU: {avg_cpu:.2f}%, 管理进程: {managed_count})",
+                        f"(当前CPU: {current_cpu:.2f}%, 滑动窗口平均CPU: {avg_cpu:.2f}%, 管理进程: {managed_count})",
                     )
 
                     # 记录CPU限制调整
@@ -491,7 +491,7 @@ async def metrics_collection_task():
                 status = cpu_scheduler.get_scheduler_status()
                 logger.info(
                     f"CPU: {metrics['cpu_percent']}% | "
-                    f"平均: {status['rolling_window_avg_cpu']}% | "
+                    f"滑动窗口平均: {status['sliding_window_avg_cpu']}% | "
                     f"安全限制: {status['safe_cpu_limit']}% | "
                     f"风险: {status['risk_level']}",
                 )

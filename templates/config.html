@@ -34,14 +34,14 @@
 
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            <label class="form-label">滚动窗口大小 (小时)</label>
+                            <label class="form-label">滑动窗口大小 (小时)</label>
                             <input type="number" class="form-control" id="rollingWindowHours" min="1" max="168" required>
-                            <small class="text-muted">滚动统计窗口的时长</small>
+                            <small class="text-muted">滑动统计窗口的时长</small>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">平均负载限制 (%)</label>
                             <input type="number" class="form-control" id="avgLoadLimitPercent" min="0" max="100" step="0.1" required>
-                            <small class="text-muted">滚动窗口内允许的平均 CPU 使用率上限</small>
+                            <small class="text-muted">滑动窗口内允许的平均 CPU 使用率上限</small>
                         </div>
                     </div>
 
@@ -60,9 +60,22 @@
 
                     <div class="row mb-3">
                         <div class="col-md-6">
+                            <label class="form-label">滑动窗口步长 (秒)</label>
+                            <input type="number" class="form-control" id="slidingWindowStepSeconds" min="10" max="3600" required>
+                            <small class="text-muted">滑动窗口的滑动间隔时间</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
                             <label class="form-label">CPU限制调整间隔 (秒)</label>
                             <input type="number" class="form-control" id="cpuLimitAdjustIntervalSeconds" min="1" max="300" required>
                             <small class="text-muted">CPU限制调整的时间间隔(独立于采集频率)</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">CPU限制容差 (%)</label>
+                            <input type="number" class="form-control" id="cpuLimitTolerancePercent" min="0" max="10" step="0.1" required>
+                            <small class="text-muted">避免统计精度导致的误报警告(默认1.0%)</small>
                         </div>
                     </div>
 
@@ -74,24 +87,6 @@
                             <label class="form-label">安全系数</label>
                             <input type="number" class="form-control" id="safetyFactor" min="0.5" max="1.0" step="0.01" required>
                             <small class="text-muted">正常运行时的安全系数(0.5-1.0,越小越保守)</small>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">启动安全系数</label>
-                            <input type="number" class="form-control" id="startupSafetyFactor" min="0.5" max="1.0" step="0.01" required>
-                            <small class="text-muted">启动初期的安全系数(数据不足时使用)</small>
-                        </div>
-                    </div>
-
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label">启动数据阈值 (%)</label>
-                            <input type="number" class="form-control" id="startupDataThresholdPercent" min="1" max="50" step="0.1" required>
-                            <small class="text-muted">低于此值(占窗口百分比)时使用启动安全系数</small>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">CPU限制容差 (%)</label>
-                            <input type="number" class="form-control" id="cpuLimitTolerancePercent" min="0" max="10" step="0.1" required>
-                            <small class="text-muted">避免统计精度导致的误报警告(默认1.0%)</small>
                         </div>
                     </div>
 

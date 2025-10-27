@@ -11,13 +11,12 @@ async function loadSystemConfig() {
         document.getElementById('minLoadPercent').value = config.min_load_percent;
         document.getElementById('maxLoadPercent').value = config.max_load_percent;
         document.getElementById('rollingWindowHours').value = config.rolling_window_hours;
+        document.getElementById('slidingWindowStepSeconds').value = config.sliding_window_step_seconds || 100;
         document.getElementById('avgLoadLimitPercent').value = config.avg_load_limit_percent;
         document.getElementById('historyRetentionDays').value = config.history_retention_days;
         document.getElementById('metricsIntervalSeconds').value = config.metrics_interval_seconds;
         document.getElementById('cpuLimitAdjustIntervalSeconds').value = config.cpu_limit_adjust_interval_seconds || 15;
-        document.getElementById('safetyFactor').value = config.safety_factor || 0.85;
-        document.getElementById('startupSafetyFactor').value = config.startup_safety_factor || 0.7;
-        document.getElementById('startupDataThresholdPercent').value = config.startup_data_threshold_percent || 10.0;
+        document.getElementById('safetyFactor').value = config.safety_factor || 0.9;
         document.getElementById('cpuLimitTolerancePercent').value = config.cpu_limit_tolerance_percent || 1.0;
 
     } catch (error) {
@@ -39,14 +38,12 @@ document.getElementById('systemConfigForm').addEventListener('submit', async (e)
         min_load_percent: parseFloat(document.getElementById('minLoadPercent').value),
         max_load_percent: parseFloat(document.getElementById('maxLoadPercent').value),
         rolling_window_hours: parseInt(document.getElementById('rollingWindowHours').value),
-        window_start_hour: 0,  // 固定为0点开始,暂不支持前端修改
+        sliding_window_step_seconds: parseInt(document.getElementById('slidingWindowStepSeconds').value),
         avg_load_limit_percent: parseFloat(document.getElementById('avgLoadLimitPercent').value),
         history_retention_days: parseInt(document.getElementById('historyRetentionDays').value),
         metrics_interval_seconds: parseInt(document.getElementById('metricsIntervalSeconds').value),
         cpu_limit_adjust_interval_seconds: parseInt(document.getElementById('cpuLimitAdjustIntervalSeconds').value),
         safety_factor: parseFloat(document.getElementById('safetyFactor').value),
-        startup_safety_factor: parseFloat(document.getElementById('startupSafetyFactor').value),
-        startup_data_threshold_percent: parseFloat(document.getElementById('startupDataThresholdPercent').value),
         cpu_limit_tolerance_percent: parseFloat(document.getElementById('cpuLimitTolerancePercent').value)
     };
 

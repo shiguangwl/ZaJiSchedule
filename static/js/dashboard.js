@@ -84,7 +84,13 @@ async function updateDashboard() {
             const status = data.scheduler_status;
             lastSchedulerStatus = status;
 
-            document.getElementById('avgCpu').textContent = status.rolling_window_avg_cpu + '%';
+            const avgCpuValue = status.sliding_window_avg_cpu;
+            if (avgCpuValue !== undefined && avgCpuValue !== null && !isNaN(avgCpuValue)) {
+                document.getElementById('avgCpu').textContent = avgCpuValue + '%';
+            } else {
+                document.getElementById('avgCpu').textContent = '--';
+                console.warn('滑动窗口平均CPU值异常:', avgCpuValue);
+            }
             document.getElementById('safeCpuLimit').textContent = status.safe_cpu_limit;
             if (document.getElementById('appliedCpuLimit')) {
                 document.getElementById('appliedCpuLimit').textContent = (status.applied_cpu_limit ?? '--');
@@ -98,7 +104,7 @@ async function updateDashboard() {
                 const remainingQuotaMin = status.quota_info.remaining_quota;  // 分钟单位
                 const remainingQuotaHour = remainingQuotaMin / 60;  // 转换为小时
                 const targetCpu = status.quota_info.target_cpu_percent;
-                const avgCpu = status.rolling_window_avg_cpu;
+                const avgCpu = status.sliding_window_avg_cpu;
                 const avgLimit = status.avg_load_limit;
 
                 // 显示配额（分钟 + 小时）
